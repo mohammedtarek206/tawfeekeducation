@@ -1,0 +1,121 @@
+import fs from 'fs';
+import path from 'path';
+
+const root = 'd:/مشاربع/التوفيق منصه/app';
+
+// 1. Admin Pages
+const adminExamsPage = fs.readFileSync(path.join(root, 'admin/exams/page.tsx'), 'utf-8');
+
+function extractForm(title: string, type: string, description: string) {
+    let replaced = adminExamsPage.replace(
+        /الامتحانات والكويزات/g,
+        title
+    ).replace(
+        /إنشاء وإدارة امتحانات أسبوعية وشهرية وكويزات الحصص/g,
+        description
+    ).replace(
+        /type: 'weekly'/g,
+        `type: '${type}'`
+    );
+    // Remove the select for type
+    replaced = replaced.replace(
+        /<label className="input-label">النوع<\/label>[\s\S]*?<\/select>/,
+        `<label className="input-label">النوع</label><input className="input-field bg-gray-100" readOnly value="${type}" />`
+    );
+    return replaced;
+}
+
+const sections = [
+    { dir: 'admin/lesson-quizzes', code: extractForm('اختبارات الحصص', 'quiz', 'إدارة اختبارات الحصص المرتبطة بالدروس') },
+    { dir: 'admin/weekly-exams', code: extractForm('الاختبارات الأسبوعية', 'weekly', 'إدارة الاختبارات الأسبوعية للمراجعة الدورية') },
+    { dir: 'admin/monthly-exams', code: extractForm('الاختبارات الشهرية', 'monthly', 'إدارة الاختبارات الشهرية الشاملة') },
+];
+
+sections.forEach(s => {
+    const dirPath = path.join(root, s.dir);
+    if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath, { recursive: true });
+    fs.writeFileSync(path.join(dirPath, 'page.tsx'), s.code);
+});
+
+// For Solution Videos
+const solutionVideosCode = `
+'use client';
+export default function SolutionVideosPage() {
+    return <div className="p-6">
+        <h1 className="text-2xl font-bold mb-4">فيديوهات الحل</h1>
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+            <p>هذا القسم مخصص لإدارة فيديوهات الحل (إنشاء، تعديل، حذف، رفع Cover)</p>
+            <button className="btn-primary mt-4">+ إضافة فيديو جديد</button>
+        </div>
+    </div>;
+}
+`;
+fs.mkdirSync(path.join(root, 'admin/solution-videos'), { recursive: true });
+fs.writeFileSync(path.join(root, 'admin/solution-videos/page.tsx'), solutionVideosCode);
+
+const studyNotesCode = `
+'use client';
+export default function StudyNotesPage() {
+    return <div className="p-6">
+        <h1 className="text-2xl font-bold mb-4">مذكرات سؤال وجواب</h1>
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+            <p>إدارة المذكرات المربوطة بـ Google Drive</p>
+            <button className="btn-primary mt-4">+ إضافة مذكرة جديدة</button>
+        </div>
+    </div>;
+}
+`;
+fs.mkdirSync(path.join(root, 'admin/study-notes'), { recursive: true });
+fs.writeFileSync(path.join(root, 'admin/study-notes/page.tsx'), studyNotesCode);
+
+const chatbotCode = `
+'use client';
+export default function ChatbotAdminPage() {
+    return <div className="p-6">
+        <h1 className="text-2xl font-bold mb-4">اسأل المستر</h1>
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+            <p>إعدادات غلاف صفحة اسأل المستر</p>
+        </div>
+    </div>;
+}
+`;
+fs.mkdirSync(path.join(root, 'admin/ask-master'), { recursive: true });
+fs.writeFileSync(path.join(root, 'admin/ask-master/page.tsx'), chatbotCode);
+
+// 2. Student Pages
+const studentPages = [
+    { dir: 'student/lesson-quizzes', title: 'اختبارات الحصص' },
+    { dir: 'student/solution-videos', title: 'فيديوهات الحل' },
+    { dir: 'student/weekly-exams', title: 'الاختبار الأسبوعي' },
+    { dir: 'student/monthly-exams', title: 'الاختبار الشهري' },
+    { dir: 'student/study-notes', title: 'مذكرات سؤال وجواب' },
+    { dir: 'student/ask-master', title: 'اسأل المستر (Chatbot)' },
+];
+
+studentPages.forEach(s => {
+    const dirPath = path.join(root, s.dir);
+    if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath, { recursive: true });
+    const code = \`
+import React from 'react';
+export default function Page() {
+    return (
+        <div className="space-y-6">
+            {/* Cover Image Placeholder */}
+            <div className="w-full h-48 sm:h-64 bg-forest rounded-2xl flex items-center justify-center text-white text-3xl font-bold shadow-md">
+                غلاف صفحة: \${s.title}
+            </div>
+            
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 text-center">
+                <h1 className="text-2xl font-bold mb-2">\${s.title}</h1>
+                <p className="text-gray-500 mb-6">هذه الصفحة قيد التطوير لعرض الميزات الجديدة بناءً على البيانات الحالية.</p>
+                \${['الاختبار الأسبوعي', 'الاختبار الشهري', 'اختبارات الحصص'].includes(s.title) ? '<button className="btn-primary">ابدأ الاختبار</button>' : ''}
+                \${s.title === 'اسأل المستر (Chatbot)' ? '<div className="h-64 border-2 border-dashed border-gray-200 mt-6 rounded-xl flex items-center justify-center text-gray-400">واجهة المحادثة (Chat Interface)</div>' : ''}
+            </div>
+        </div>
+    );
+}
+    \`;
+    fs.writeFileSync(path.join(dirPath, 'page.tsx'), code);
+});
+
+console.log('Successfully setup all 12 pages!');
