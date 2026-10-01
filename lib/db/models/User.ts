@@ -32,6 +32,7 @@ export interface IUser extends Document {
     lastActivityDate?: Date;
     linkedStudents?: mongoose.Types.ObjectId[];
     linkedParent?: mongoose.Types.ObjectId;
+    parentLinkingCode?: string;
     lastLogin?: Date;
     createdAt: Date;
     updatedAt: Date;
@@ -85,6 +86,7 @@ const UserSchema = new Schema<IUser>(
         lastActivityDate: { type: Date },
         linkedStudents: [{ type: Schema.Types.ObjectId, ref: 'User' }],
         linkedParent: { type: Schema.Types.ObjectId, ref: 'User' },
+        parentLinkingCode: { type: String, unique: true, sparse: true, index: true },
         lastLogin: { type: Date },
     },
     {

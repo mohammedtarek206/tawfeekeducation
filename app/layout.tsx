@@ -1,5 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import ServiceWorkerRegister from '@/components/ServiceWorkerRegister';
+import PWAInstallBanner from '@/components/PWAInstallBanner';
 
 // ─── Site Constants ───────────────────────────────────────────────────────────
 const SITE_NAME = 'أبو زيد للدراسات والجغرافيا والتاريخ';
@@ -99,12 +101,24 @@ export default function RootLayout({
                     rel="stylesheet"
                 />
                 <meta name="theme-color" content="#123C32" />
+                <meta name="apple-mobile-web-app-capable" content="yes" />
+                <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+                <meta name="apple-mobile-web-app-title" content="التوفيق" />
+                <meta name="mobile-web-app-capable" content="yes" />
+                <meta name="application-name" content="التوفيق" />
+                <meta name="msapplication-TileColor" content="#123C32" />
+                <link rel="apple-touch-icon" href="/لوجو.jpg" />
+                <link rel="manifest" href="/manifest.json" />
                 <script
                     type="application/ld+json"
                     dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
                 />
             </head>
-            <body className="font-arabic antialiased bg-white text-gray-900">{children}</body>
+            <body className="font-arabic antialiased bg-white text-gray-900">
+                {children}
+                <ServiceWorkerRegister />
+                <PWAInstallBanner />
+            </body>
         </html>
     );
 }

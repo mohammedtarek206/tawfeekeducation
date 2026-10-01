@@ -31,6 +31,12 @@ export const registerSchema = z.object({
     referralCode: z.string().optional(),
 });
 
+export const parentRegisterSchema = z.object({
+    name: z.string().min(3, 'الاسم يجب أن يكون 3 أحرف على الأقل').max(100).trim(),
+    phone: phoneSchema,
+    password: passwordSchema,
+});
+
 export const loginSchema = z.object({
     phone: phoneSchema,
     password: z.string().min(1, 'كلمة المرور مطلوبة'),

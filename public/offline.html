@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>غير متصل - منصة التوفيق</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Cairo', 'Tajawal', sans-serif;
+      background: #F7F5F0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 2rem;
+    }
+    .container {
+      background: white;
+      border-radius: 2rem;
+      padding: 3rem 2rem;
+      max-width: 480px;
+      width: 100%;
+      box-shadow: 0 4px 24px rgba(18,60,50,0.05);
+    }
+    .icon { font-size: 5rem; margin-bottom: 1.5rem; }
+    h1 { font-size: 1.75rem; font-weight: 900; color: #123C32; margin-bottom: 1rem; }
+    p { color: #6b7280; font-size: 1rem; line-height: 1.6; margin-bottom: 2rem; }
+    button {
+      background: #123C32;
+      color: white;
+      border: none;
+      padding: 0.875rem 2.5rem;
+      border-radius: 0.875rem;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="icon">📡</div>
+    <h1>لا يوجد اتصال بالإنترنت</h1>
+    <p>يبدو أن اتصالك بالإنترنت منقطع. تحقق من اتصالك وحاول مجدداً.</p>
+    <button onclick="window.location.reload()">إعادة المحاولة</button>
+  </div>
+</body>
+</html>

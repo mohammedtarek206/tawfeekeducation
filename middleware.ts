@@ -92,7 +92,7 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
     }
 
     /* ─── PARENT ROUTES PROTECTION ─── */
-    if (pathname.startsWith('/parent') && pathname !== '/parent/login') {
+    if (pathname.startsWith('/parent') && !['/parent/login', '/parent/register'].includes(pathname)) {
         const payload = token ? await verifyEdgeToken(token) : null;
         if (!payload || payload.role !== 'parent') {
             return NextResponse.redirect(new URL('/parent/login', req.url));

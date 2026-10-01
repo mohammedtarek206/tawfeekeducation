@@ -238,7 +238,18 @@ export default function StudentDashboardOverview() {
                             <div className="bg-white border text-center border-earth/60 rounded-lg p-3 font-mono font-bold text-lg text-forest mb-2 select-all shadow-sm">
                                 {student.referralCode}
                             </div>
-                            <p className="text-xs text-center text-gold-dark font-medium">اضغط لنسخ الكود</p>
+                            <p className="text-xs text-center text-gold-dark font-medium mb-6">اضغط لنسخ الكود</p>
+
+                            <h3 className="font-bold text-lg mb-1 text-forest flex items-center gap-2">
+                                👨‍👩‍👧‍👦 كود متابعة ولي الأمر
+                            </h3>
+                            <p className="text-sm text-muted mb-4">
+                                أعطِ هذا الكود لولي أمرك ليتمكن من متابعة أدائك ودرجاتك.
+                            </p>
+                            <div className="bg-forest/10 border text-center border-forest/20 rounded-lg p-3 font-mono font-bold text-lg text-forest mb-2 select-all shadow-sm uppercase tracking-widest">
+                                {student.parentLinkingCode}
+                            </div>
+                            <p className="text-xs text-center text-forest font-medium">كود سري وخاص بك</p>
                         </div>
                     </div>
                 </div>

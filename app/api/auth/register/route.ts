@@ -58,6 +58,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
         // Create user
         const uniqueReferralCode = generateReferralCode(name);
+        // Custom short code for parent linking e.g., TWF-XXXXX
+        const parentLinkingCode = 'TWF-' + Math.random().toString(36).substring(2, 7).toUpperCase();
+
         const user = await User.create({
             name,
             phone,
@@ -70,6 +73,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
             parentName,
             parentPhone,
             referralCode: uniqueReferralCode,
+            parentLinkingCode,
             referredBy: referrerId,
         });
 

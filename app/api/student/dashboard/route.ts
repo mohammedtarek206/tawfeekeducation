@@ -12,10 +12,16 @@ async function handler(req: NextRequest, _ctx: unknown, student: JWTPayload): Pr
     await connectDB();
 
     const studentUser = await User.findById(student.userId).select(
-        'name points level streak grade isFreeStudent referralCode'
+        'name points level streak grade isFreeStudent referralCode parentLinkingCode'
     );
     if (!studentUser) {
         return NextResponse.json({ success: false, message: 'الطالب غير موجود' }, { status: 404 });
+    }
+
+    // Ensure legacy students have a linking code
+    if (!studentUser.parentLinkingCode) {
+        studentUser.parentLinkingCode = 'TWF-' + Math.random().toString(36).substring(2, 7).toUpperCase();
+        await studentUser.save();
     }
 
     // Get lesson progress
@@ -94,6 +100,7 @@ async function handler(req: NextRequest, _ctx: unknown, student: JWTPayload): Pr
                 grade: studentUser.grade,
                 isFreeStudent: studentUser.isFreeStudent,
                 referralCode: studentUser.referralCode,
+                parentLinkingCode: studentUser.parentLinkingCode,
             },
             stats: {
                 completedLessons,
