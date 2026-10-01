@@ -21,7 +21,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         await connectDB();
 
         // Verify relationship
-        const student = await User.findById(studentId).select('linkedParent').lean();
+        const student: any = await User.findById(studentId).select('linkedParent').lean();
         if (!student || !student.linkedParent || student.linkedParent.toString() !== payload.userId) {
             return NextResponse.json({ success: false, message: 'غير مصرح لك بالوصول لمعلومات هذا الطالب' }, { status: 403 });
         }
