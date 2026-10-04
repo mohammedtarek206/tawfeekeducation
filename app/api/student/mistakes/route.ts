@@ -45,8 +45,8 @@ async function getHandler(req: NextRequest, _ctx: unknown, student: JWTPayload):
         submittedAt: Date | undefined;
     }> = [];
 
-    for (const attempt of attempts) {
-        for (const answer of attempt.answers) {
+    for (const attempt of (attempts as any[])) {
+        for (const answer of (attempt.answers || [])) {
             if (!answer.isCorrect) {
                 wrongAnswers.push({
                     questionId: answer.questionId.toString(),
@@ -60,6 +60,7 @@ async function getHandler(req: NextRequest, _ctx: unknown, student: JWTPayload):
         }
     }
 
+
     if (!wrongAnswers.length) {
         return NextResponse.json({
             success: true,
@@ -68,7 +69,7 @@ async function getHandler(req: NextRequest, _ctx: unknown, student: JWTPayload):
     }
 
     // Get unique question IDs
-    const uniqueQuestionIds = [...new Set(wrongAnswers.map((w) => w.questionId))];
+    const uniqueQuestionIds = Array.from(new Set(wrongAnswers.map((w) => w.questionId)));
 
     // Build question filter (subject)
     const qFilter: Record<string, unknown> = { _id: { $in: uniqueQuestionIds } };
@@ -77,7 +78,8 @@ async function getHandler(req: NextRequest, _ctx: unknown, student: JWTPayload):
     const questions = await Question.find(qFilter).lean();
 
     // Build exam map for titles
-    const examIds = [...new Set(wrongAnswers.map((w) => w.examRef))];
+    const examIds = Array.from(new Set(wrongAnswers.map((w) => w.examRef)));
+
     const exams = await Exam.find({ _id: { $in: examIds } })
         .select('title type subject')
         .lean();

@@ -14,8 +14,9 @@ async function getHandler(): Promise<NextResponse> {
 
     const questionMistakesMap = new Map<string, { count: number; studentIds: Set<string> }>();
 
-    for (const att of attempts) {
-        for (const ans of att.answers || []) {
+    for (const att of (attempts as any[])) {
+        for (const ans of (att.answers || [])) {
+
             if (!ans.isCorrect && ans.questionId) {
                 const qId = ans.questionId.toString();
                 const current = questionMistakesMap.get(qId) || { count: 0, studentIds: new Set<string>() };
