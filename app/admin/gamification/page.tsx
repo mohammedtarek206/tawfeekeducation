@@ -32,18 +32,18 @@ export default function AdminGamificationPage() {
                     {/* Summary cards */}
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-                            <div className="text-3xl mb-2">🪙</div>
-                            <div className="text-3xl font-black text-gray-900">{data.totalPointsAwarded?.toLocaleString() ?? 0}</div>
+                            <div className="text-3xl mb-2" suppressHydrationWarning>🪙</div>
+                            <div className="text-3xl font-black text-gray-900" suppressHydrationWarning>{data.totalPointsAwarded?.toLocaleString() ?? 0}</div>
                             <div className="text-sm font-medium text-gray-500 mt-1">إجمالي النقاط الممنوحة</div>
                         </div>
                         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-                            <div className="text-3xl mb-2">🏆</div>
-                            <div className="text-3xl font-black text-gray-900">{data.topStudents?.length ?? 0}</div>
+                            <div className="text-3xl mb-2" suppressHydrationWarning>🏆</div>
+                            <div className="text-3xl font-black text-gray-900" suppressHydrationWarning>{data.topStudents?.length ?? 0}</div>
                             <div className="text-sm font-medium text-gray-500 mt-1">طلاب في المتصدرين</div>
                         </div>
                         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-                            <div className="text-3xl mb-2">📊</div>
-                            <div className="text-3xl font-black text-gray-900">{data.totalTransactions?.toLocaleString() ?? 0}</div>
+                            <div className="text-3xl mb-2" suppressHydrationWarning>📊</div>
+                            <div className="text-3xl font-black text-gray-900" suppressHydrationWarning>{data.totalTransactions?.toLocaleString() ?? 0}</div>
                             <div className="text-sm font-medium text-gray-500 mt-1">إجمالي المعاملات</div>
                         </div>
                     </div>
@@ -51,7 +51,7 @@ export default function AdminGamificationPage() {
                     {/* Leaderboard */}
                     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
                         <div className="px-6 py-4 border-b border-gray-100">
-                            <h2 className="font-bold text-gray-900">🏆 قائمة المتصدرين</h2>
+                            <h2 className="font-bold text-gray-900"><span suppressHydrationWarning>🏆</span> قائمة المتصدرين</h2>
                         </div>
                         {!data.topStudents || data.topStudents.length === 0 ? (
                             <div className="text-center py-12 text-gray-500">لا يوجد بيانات متاحة</div>
@@ -68,9 +68,10 @@ export default function AdminGamificationPage() {
                                             <div className="text-xs text-gray-500">{s.phone}</div>
                                         </div>
                                         <div className="text-left">
-                                            <div className="font-black text-tawfeek-primary">{s.points?.toLocaleString()}</div>
+                                            <div className="font-black text-tawfeek-primary" suppressHydrationWarning>{s.points?.toLocaleString()}</div>
                                             <div className="text-xs text-gray-500">نقطة</div>
                                         </div>
+
                                     </div>
                                 ))}
                             </div>

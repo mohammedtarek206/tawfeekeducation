@@ -27,7 +27,7 @@ const TYPE_COLORS: Record<string, string> = {
 const EMPTY_FORM = {
     title: '',
     type: 'weekly',
-    grade: 'third_preparatory',
+    grade: 'first_secondary',
     subject: '',
     duration: 60,
     passingScore: 50,
@@ -217,7 +217,7 @@ export default function AdminExamsPage() {
         setForm({
             title: ex.title || '',
             type: ex.type || 'weekly',
-            grade: ex.grade || 'third_preparatory',
+            grade: ex.grade || 'first_secondary',
             subject: ex.subject || '',
             duration: ex.duration || 60,
             passingScore: ex.passingScore || 50,
@@ -508,7 +508,7 @@ export default function AdminExamsPage() {
                                         className="text-xs font-bold px-3 py-1.5 rounded-lg border bg-orange-50 text-orange-600 border-orange-200 hover:bg-orange-100 transition-colors cursor-pointer flex-shrink-0"
                                         title="تعديل بيانات الامتحان"
                                     >
-                                        ✉️ تعديل
+                                        <span suppressHydrationWarning>✏️</span> تعديل
                                     </button>
                                     <button
                                         onClick={() => togglePublish(ex._id, ex.isPublished)}
@@ -517,15 +517,16 @@ export default function AdminExamsPage() {
                                             : 'bg-gray-100 text-gray-600 border-gray-200 hover:bg-forest/10 hover:text-forest hover:border-forest/30'
                                             }`}
                                     >
-                                        {ex.isPublished ? '✓ منشور — إيقاف' : '▶ نشر للطلاب'}
+                                        {ex.isPublished ? '✓ منشور — إيقاف' : <><span suppressHydrationWarning>▶</span> نشر للطلاب</>}
                                     </button>
                                     <button
                                         onClick={() => deleteExam(ex._id, ex.title)}
                                         className="text-xs font-bold px-2 py-1.5 rounded-lg border bg-red-50 text-red-600 border-red-200 hover:bg-red-100 transition-colors cursor-pointer flex-shrink-0"
                                         title="حذف"
                                     >
-                                        🗑
+                                        <span suppressHydrationWarning>🗑</span>
                                     </button>
+
                                 </div>
                             </div>
                         ))}

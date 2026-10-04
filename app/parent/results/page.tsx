@@ -2,6 +2,8 @@
 import { useState, useEffect } from 'react';
 import { useParentContext } from '@/components/parent/ParentContext';
 import Link from 'next/link';
+import { formatDate } from '@/lib/utils/helpers';
+
 
 export default function ParentResultsPage() {
     const { selectedStudent, loading: contextLoading } = useParentContext();
@@ -78,8 +80,8 @@ export default function ParentResultsPage() {
                         key={tab.id}
                         onClick={() => setActiveTab(tab.id)}
                         className={`flex-1 min-w-[120px] px-4 py-3 rounded-xl font-bold text-sm sm:text-base transition-all ${activeTab === tab.id
-                                ? 'bg-forest text-white shadow-md'
-                                : 'bg-transparent text-gray-500 hover:bg-offwhite hover:text-forest'
+                            ? 'bg-forest text-white shadow-md'
+                            : 'bg-transparent text-gray-500 hover:bg-offwhite hover:text-forest'
                             }`}
                     >
                         {tab.label} <span className="text-xs bg-black/10 px-2 py-0.5 rounded-full mr-1">{tab.count}</span>
@@ -112,9 +114,10 @@ export default function ParentResultsPage() {
                                         <div className="text-3xl font-black text-gray-900 dir-ltr">{exam.percentage}%</div>
                                     </div>
                                 </div>
-                                <div className="text-xs text-gray-400 mt-4 text-left">
-                                    تاريخ الأداء: {new Date(exam.submittedAt).toLocaleDateString('ar-EG')}
+                                <div className="text-xs text-gray-400 mt-4 text-left" suppressHydrationWarning>
+                                    تاريخ الأداء: {formatDate(exam.submittedAt)}
                                 </div>
+
                             </div>
                         ))}
                     </div>

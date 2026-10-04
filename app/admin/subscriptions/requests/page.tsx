@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { gradeLabel } from '@/lib/constants/grades';
+import { formatDateTime } from '@/lib/utils/helpers';
+
 
 export default function AdminPaymentRequestsPage() {
     const [requests, setRequests] = useState([]);
@@ -81,7 +83,8 @@ export default function AdminPaymentRequestsPage() {
                                 {req.transactionRef && (
                                     <div className="text-sm text-gray-600 mb-1">رقم المعاملة / الملاحظة: <span className="font-mono bg-gray-100 px-2 py-0.5 rounded text-gray-800">{req.transactionRef}</span></div>
                                 )}
-                                <div className="text-xs text-gray-400 mt-2">تاريخ الطلب: {new Date(req.createdAt).toLocaleString('ar-EG')}</div>
+                                <div className="text-xs text-gray-400 mt-2" suppressHydrationWarning>تاريخ الطلب: {formatDateTime(req.createdAt)}</div>
+
 
                                 {req.adminNote && (
                                     <div className="mt-4 p-3 bg-red-50 text-red-800 rounded-xl text-sm border border-red-100">

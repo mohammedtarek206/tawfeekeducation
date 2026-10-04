@@ -15,7 +15,7 @@ export default function StudyNotesAdminPage() {
     const [form, setForm] = useState({
         title: '',
         driveUrl: '',
-        grade: 'third_preparatory',
+        grade: 'first_secondary',
         subject: '',
         description: '',
         isPublished: true,
@@ -47,7 +47,7 @@ export default function StudyNotesAdminPage() {
             if (!data.success) { setError(data.message || 'حدث خطأ'); return; }
             setSuccess('تم إنشاء المذكرة بنجاح ✅');
             setShowForm(false);
-            setForm({ title: '', driveUrl: '', grade: 'third_preparatory', subject: '', description: '', isPublished: true });
+            setForm({ title: '', driveUrl: '', grade: 'first_secondary', subject: '', description: '', isPublished: true });
             load();
             setTimeout(() => setSuccess(''), 3000);
         } catch { setError('حدث خطأ'); }

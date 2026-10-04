@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { gradeLabel, GRADES } from '@/lib/constants/grades';
+import { formatDate } from '@/lib/utils/helpers';
+
 
 export default function AdminFreeStudentsPage() {
     const [data, setData] = useState<any>(null);
@@ -150,12 +152,13 @@ export default function AdminFreeStudentsPage() {
                                                 {gradeLabel(student.grade)}
                                             </span>
                                         </td>
-                                        <td className="p-4 text-gray-600 text-xs font-mono">
-                                            {student.subscriptionStartDate ? new Date(student.subscriptionStartDate).toLocaleDateString('ar-EG') : '-'}
+                                        <td className="p-4 text-gray-600 text-xs font-mono" suppressHydrationWarning>
+                                            {student.subscriptionStartDate ? formatDate(student.subscriptionStartDate) : '-'}
                                         </td>
-                                        <td className="p-4 text-gray-600 text-xs font-mono">
-                                            {student.subscriptionEndDate ? new Date(student.subscriptionEndDate).toLocaleDateString('ar-EG') : '-'}
+                                        <td className="p-4 text-gray-600 text-xs font-mono" suppressHydrationWarning>
+                                            {student.subscriptionEndDate ? formatDate(student.subscriptionEndDate) : '-'}
                                         </td>
+
                                         <td className="p-4">
                                             <span className="bg-emerald-100 text-emerald-800 text-xs font-bold px-3 py-1 rounded-full">
                                                 مجاني مفعّل

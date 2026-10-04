@@ -51,16 +51,15 @@ function TeacherImage() {
                 style={{ background: 'radial-gradient(circle, rgba(201,162,39,0.5) 0%, transparent 70%)', transform: 'scale(1.15)' }} />
 
             {/* Image Container with premium frame */}
-            <div className="relative rounded-[2rem] overflow-hidden shadow-2xl z-10 max-w-sm md:max-w-md lg:max-w-[400px] w-full"
+            <div className="relative rounded-[2rem] overflow-hidden shadow-2xl z-10 w-full max-w-xl lg:max-w-2xl"
                 style={{ boxShadow: '0 32px 80px -16px rgba(18,60,50,0.35), 0 0 0 4px #fff, 0 0 0 6px rgba(201,162,39,0.3)' }}>
                 {/* Gold border overlay */}
                 <div className="absolute inset-0 rounded-[2rem] border-2 border-gold/30 z-20 pointer-events-none" />
                 {/* Image */}
                 <img
-                    src="/mr-attia.jpg"
+                    src="/هلا بكم.jpg"
                     alt="مستر أبو زيد - خبير الجغرافيا والتاريخ"
-                    className="w-full h-auto object-cover object-center block"
-                    style={{ aspectRatio: '9/16' }}
+                    className="w-full h-auto object-cover object-top block"
                     onError={(e) => {
                         // Fallback if image not found yet
                         (e.target as HTMLImageElement).style.display = 'none';
@@ -80,26 +79,7 @@ function TeacherImage() {
             <div className="absolute -top-8 -right-8 w-32 h-32 bg-gold/25 rounded-full blur-2xl z-0" />
             <div className="absolute -bottom-8 -left-8 w-40 h-40 bg-forest/25 rounded-full blur-2xl z-0" />
 
-            {/* Floating info card — top right */}
-            <div className="absolute top-8 -right-4 md:-right-12 glass-dark rounded-2xl px-4 py-3 shadow-xl border border-white/10 animate-float z-20"
-                style={{ animationDelay: '0.8s' }}>
-                <div className="text-[10px] text-white/50 uppercase tracking-widest mb-1">خبير المادة</div>
-                <div className="text-white font-bold text-sm mb-0.5">مستر / أبو زيد</div>
-                <div className="flex items-center gap-1.5">
-                    <span className="text-gold text-xs">⭐⭐⭐⭐⭐</span>
-                </div>
-            </div>
 
-            {/* Floating info card — bottom left */}
-            <div className="absolute bottom-20 -left-4 md:-left-12 glass rounded-2xl px-4 py-3 shadow-xl border border-white/20 animate-float z-20"
-                style={{ animationDelay: '1.5s' }}>
-                <div className="text-[10px] text-forest font-black mb-1.5">✏️ يدرّس:</div>
-                <div className="flex flex-col gap-1">
-                    <span className="bg-forest/10 text-forest text-xs font-semibold px-2.5 py-1 rounded-lg">الإعدادية</span>
-                    <span className="bg-forest/10 text-forest text-xs font-semibold px-2.5 py-1 rounded-lg">الثانوية العامة</span>
-                    <span className="bg-gold/10 text-gold-dark text-xs font-semibold px-2.5 py-1 rounded-lg">البكالوريا</span>
-                </div>
-            </div>
         </div>
     );
 }
@@ -198,7 +178,7 @@ export default function HeroSection() {
                     </div>
 
                     {/* ── Visual Side ── */}
-                    <div className="order-1 lg:order-2 flex justify-center lg:justify-end">
+                    <div className="order-1 lg:order-2 flex justify-center lg:justify-end w-full">
                         <TeacherImage />
                     </div>
                 </div>

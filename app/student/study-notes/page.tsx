@@ -1,13 +1,8 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { SUBJECTS, getSubjectLabel } from '@/lib/constants/subjects';
+import { gradeLabel } from '@/lib/constants/grades';
 
-const GRADE_LABELS: Record<string, string> = {
-    third_preparatory: 'الثالث الإعدادي',
-    first_secondary: 'الأول الثانوي',
-    second_secondary: 'الثاني الثانوي / البكالوريا',
-    third_secondary: 'الثالث الثانوي',
-};
 
 export default function StudentStudyNotesPage() {
     const [notes, setNotes] = useState<any[]>([]);

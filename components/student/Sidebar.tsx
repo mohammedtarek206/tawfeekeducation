@@ -14,15 +14,22 @@ const LINKS = [
     { href: '/student/exams', label: 'الامتحانات', icon: '📊' },
     { href: '/student/weekly-exams', label: 'الاختبار الأسبوعي', icon: '📅' },
     { href: '/student/monthly-exams', label: 'الاختبار الشهري', icon: '📆' },
+    { href: '/student/mistakes', label: 'أخطائي', icon: '📋' },
     { href: '/student/study-notes', label: 'مذكرات س/ج', icon: '📚' },
     { href: '/student/ask-master', label: 'اسأل المستر', icon: '🤖' },
     { href: '/student/rewards', label: 'الجوائز', icon: '🎁' },
     { href: '/student/leaderboard', label: 'لوحة الشرف', icon: '🏆' },
 ];
 
+
 export default function Sidebar() {
     const pathname = usePathname();
     const [isOpen, setIsOpen] = useState(false);
+    const [mounted, setMounted] = useState(false);
+
+    useEffect(() => {
+        setMounted(true);
+    }, []);
 
     // Close sidebar on route change for mobile
     useEffect(() => {
@@ -36,7 +43,7 @@ export default function Sidebar() {
                 onClick={() => setIsOpen(!isOpen)}
                 className="lg:hidden fixed bottom-6 right-6 z-50 w-14 h-14 bg-forest text-white rounded-full flex items-center justify-center shadow-lg"
             >
-                <span className="text-2xl">{isOpen ? '✕' : '☰'}</span>
+                <span className="text-2xl" suppressHydrationWarning>{isOpen ? '✕' : '☰'}</span>
             </button>
 
             {isOpen && (
@@ -66,7 +73,7 @@ export default function Sidebar() {
 
                     <nav className="space-y-2">
                         {LINKS.map((link) => {
-                            const active = pathname === link.href || pathname.startsWith(`${link.href}/`);
+                            const active = mounted && (pathname === link.href || (link.href !== '/student/dashboard' && pathname.startsWith(`${link.href}/`)));
                             return (
                                 <Link
                                     key={link.href}
@@ -78,7 +85,7 @@ export default function Sidebar() {
                                             : 'text-[#7A8C85] hover:bg-offwhite hover:text-forest'
                                     )}
                                 >
-                                    <span className="text-xl">{link.icon}</span>
+                                    <span className="text-xl" suppressHydrationWarning>{link.icon}</span>
                                     {link.label}
                                 </Link>
                             );
@@ -89,3 +96,4 @@ export default function Sidebar() {
         </>
     );
 }
+

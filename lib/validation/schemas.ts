@@ -1,13 +1,9 @@
 import { z } from 'zod';
 import { SUBJECT_VALUES } from '../constants/subjects';
+import { ALL_GRADE_VALUES } from '../constants/grades';
 
-const GRADE_ENUM = [
-    'first_secondary',
-    'second_secondary',
-    'third_secondary',
-    'third_preparatory',
-    'second_secondary_baccalaureate',
-] as const;
+// Accepts all grade values including legacy (for existing DB records)
+const GRADE_ENUM = ALL_GRADE_VALUES.filter(Boolean) as [string, ...string[]];
 
 export const phoneSchema = z
     .string()
@@ -24,7 +20,7 @@ export const registerSchema = z.object({
     password: passwordSchema,
     parentName: z.string().min(2, 'اسم ولي الأمر مطلوب').max(100).trim(),
     parentPhone: phoneSchema,
-    grade: z.enum(GRADE_ENUM, {
+    grade: z.enum(GRADE_ENUM as unknown as [string, ...string[]], {
         errorMap: () => ({ message: 'يرجى اختيار الصف الدراسي' }),
     }),
     governorate: z.string().min(2, 'يرجى اختيار المحافظة').max(100).trim(),
@@ -55,7 +51,7 @@ export const lessonSchema = z.object({
     description: z.string().max(2000).optional(),
     thumbnail: z.string().url('رابط الصورة غير صحيح').optional().or(z.literal('')),
     youtubeUrl: z.string().url('رابط YouTube غير صحيح').optional().or(z.literal('')),
-    grade: z.enum(GRADE_ENUM),
+    grade: z.enum(GRADE_ENUM as unknown as [string, ...string[]]),
     duration: z.number().min(0).optional(),
     order: z.number().optional(),
     points: z.number().min(0).default(10),
@@ -90,7 +86,7 @@ export const examSchema = z.object({
     title: z.string().min(3).max(200),
     description: z.string().max(2000).optional(),
     type: z.enum(['quiz', 'weekly', 'monthly']),
-    grade: z.enum(GRADE_ENUM),
+    grade: z.enum(GRADE_ENUM as unknown as [string, ...string[]]),
     subject: z.enum(SUBJECT_VALUES as [string, ...string[]]).optional(),
     duration: z.number().min(5, 'مدة الامتحان يجب أن تكون 5 دقائق على الأقل'),
     startDate: z.string().optional(),
@@ -118,7 +114,7 @@ export const settingsUpdateSchema = z.object({
 
 export const subscriptionPlanSchema = z.object({
     name: z.string().min(3).max(100),
-    grade: z.enum(GRADE_ENUM),
+    grade: z.enum(GRADE_ENUM as unknown as [string, ...string[]]),
     description: z.string().max(2000).optional(),
     type: z.enum(['monthly', 'term', 'yearly']),
     durationInDays: z.number().min(1),

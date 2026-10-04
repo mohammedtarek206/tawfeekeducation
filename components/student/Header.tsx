@@ -16,8 +16,10 @@ interface UserData {
 export default function Header() {
     const router = useRouter();
     const [user, setUser] = useState<UserData | null>(null);
+    const [mounted, setMounted] = useState(false);
 
     useEffect(() => {
+        setMounted(true);
         fetch('/api/auth/me')
             .then((r) => r.json())
             .then((data) => {
@@ -45,19 +47,19 @@ export default function Header() {
                 {/* Streak */}
                 <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-earth/20 text-earth-dark rounded-lg font-bold border border-earth/30" title="أيام المداومة">
                     <span>🔥</span>
-                    <span>{user?.streak || 0}</span>
+                    <span suppressHydrationWarning>{mounted ? (user?.streak || 0) : 0}</span>
                 </div>
 
                 {/* Level */}
                 <div className="flex items-center gap-2 px-3 py-1.5 bg-forest/10 text-forest rounded-lg font-bold border border-earth/40" title="المستوى">
                     <span>⭐</span>
-                    <span>{user?.level || 1}</span>
+                    <span suppressHydrationWarning>{mounted ? (user?.level || 1) : 1}</span>
                 </div>
 
                 {/* Points */}
                 <div className="flex items-center gap-2 px-3 py-1.5 bg-gold/10 text-gold-dark rounded-lg font-bold border border-gold/30" title="إجمالي النقاط">
                     <span>🧭</span>
-                    <span>{user?.points || 0}</span>
+                    <span suppressHydrationWarning>{mounted ? (user?.points || 0) : 0}</span>
                 </div>
 
                 {/* User Menu */}
@@ -67,11 +69,11 @@ export default function Header() {
                             {user?.name ? user.name.charAt(0) : 'U'}
                         </div>
                         <div className="hidden md:block text-right pr-2 border-r border-earth/30">
-                            <div className="text-sm font-bold text-darktext truncate max-w-[120px]">
-                                {user?.name || 'طالب'}
+                            <div className="text-sm font-bold text-darktext truncate max-w-[120px]" suppressHydrationWarning>
+                                {mounted ? (user?.name || 'طالب') : 'طالب'}
                             </div>
-                            <div className="text-xs text-muted">
-                                {user?.grade ? gradeLabel(user.grade) : ''}
+                            <div className="text-xs text-muted" suppressHydrationWarning>
+                                {mounted && user?.grade ? gradeLabel(user.grade) : ''}
                             </div>
                         </div>
                     </button>

@@ -11,6 +11,7 @@ declare global {
 
 export default function PWAInstallBanner() {
     const pathname = usePathname();
+    const [mounted, setMounted] = useState(false);
     const [show, setShow] = useState(false);
     const [isIOS, setIsIOS] = useState(false);
     const [isStandalone, setIsStandalone] = useState(false);
@@ -21,6 +22,7 @@ export default function PWAInstallBanner() {
     const isParentPage = pathname?.startsWith('/parent');
 
     useEffect(() => {
+        setMounted(true);
         if (isParentPage) return;
 
         // Check if already installed (standalone mode)
@@ -29,6 +31,7 @@ export default function PWAInstallBanner() {
             (navigator as any).standalone === true;
         setIsStandalone(standalone);
         if (standalone) return;
+
 
         // Check if already dismissed
         const alreadyDismissed = sessionStorage.getItem('pwa-dismissed');
@@ -72,7 +75,7 @@ export default function PWAInstallBanner() {
         sessionStorage.setItem('pwa-dismissed', '1');
     };
 
-    if (!show || isStandalone || dismissed || isParentPage) return null;
+    if (!mounted || !show || isStandalone || dismissed || isParentPage) return null;
 
     return (
         <>

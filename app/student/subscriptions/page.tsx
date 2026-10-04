@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { gradeLabel } from '@/lib/constants/grades';
+import { formatDate } from '@/lib/utils/helpers';
+
 
 export default function StudentSubscriptionsPage() {
     const [data, setData] = useState<any>(null);
@@ -97,11 +99,11 @@ export default function StudentSubscriptionsPage() {
                             </h2>
                         </div>
                         <div className="text-emerald-800 font-medium text-sm">
-                            صالح حتى: <span className="font-bold font-mono text-base">{subscriptionEndDate ? new Date(subscriptionEndDate).toLocaleDateString('ar-EG') : 'السنة الدراسية كاملة'}</span>
+                            صالح حتى: <span className="font-bold font-mono text-base" suppressHydrationWarning>{subscriptionEndDate ? formatDate(subscriptionEndDate) : 'السنة الدراسية كاملة'}</span>
                         </div>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-emerald-800">
-                        <div>تاريخ التفعيل: <strong>{subscriptionStartDate ? new Date(subscriptionStartDate).toLocaleDateString('ar-EG') : '-'}</strong></div>
+                        <div>تاريخ التفعيل: <strong suppressHydrationWarning>{subscriptionStartDate ? formatDate(subscriptionStartDate) : '-'}</strong></div>
                         <div>الدروس والامتحانات المتاحة: <strong>وصول كامل لكافة محتويات الصف الدراسي</strong></div>
                     </div>
                 </div>
@@ -116,9 +118,10 @@ export default function StudentSubscriptionsPage() {
                             <div key={req._id} className="p-4 rounded-2xl border border-gray-100 bg-offwhite/50 flex flex-col md:flex-row md:items-center justify-between gap-4">
                                 <div>
                                     <div className="font-bold text-darktext text-base">{req.planId?.name || 'طلب اشتراك'}</div>
-                                    <div className="text-xs text-gray-500 mt-1">
-                                        تاريخ الطلب: {new Date(req.createdAt).toLocaleDateString('ar-EG')} - طريقة الدفع: {req.paymentMethod}
+                                    <div className="text-xs text-gray-500 mt-1" suppressHydrationWarning>
+                                        تاريخ الطلب: {formatDate(req.createdAt)} - طريقة الدفع: {req.paymentMethod}
                                     </div>
+
                                     {req.adminNote && req.status === 'rejected' && (
                                         <div className="mt-2 text-xs font-bold text-rose-700 bg-rose-50 p-2 rounded-lg border border-rose-200">
                                             سبب الرفض: {req.adminNote}

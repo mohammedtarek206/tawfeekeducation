@@ -1,6 +1,8 @@
 'use client';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { formatDate } from '@/lib/utils/helpers';
+
 
 export default function AdminParentsPage() {
     const [parents, setParents] = useState<any[]>([]);
@@ -87,9 +89,10 @@ export default function AdminParentsPage() {
                                                 )}
                                             </div>
                                         </td>
-                                        <td className="px-6 py-4 text-gray-500 text-sm">
-                                            {new Date(parent.createdAt).toLocaleDateString('ar-EG')}
+                                        <td className="px-6 py-4 text-gray-500 text-sm" suppressHydrationWarning>
+                                            {formatDate(parent.createdAt)}
                                         </td>
+
                                     </tr>
                                 ))}
                             </tbody>

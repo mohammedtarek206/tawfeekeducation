@@ -1,11 +1,8 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
+import { ACTIVE_GRADES } from '@/lib/constants/grades';
 
-const GRADES = [
-    { value: 'third_preparatory', label: 'الصف الثالث الإعدادي' },
-    { value: 'first_secondary', label: 'الصف الأول الثانوي' },
-    { value: 'second_secondary', label: 'الصف الثاني الثانوي' },
-];
+const GRADES = ACTIVE_GRADES;
 
 type VideoFormData = {
     title: string;
@@ -19,7 +16,7 @@ const EMPTY_FORM: VideoFormData = {
     title: '',
     description: '',
     youtubeUrl: '',
-    grade: 'third_preparatory',
+    grade: 'first_secondary',
     isPublished: false,
 };
 
@@ -141,7 +138,7 @@ export default function SolutionVideosAdminPage() {
             {/* Header */}
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
                 <div>
-                    <h1 className="text-2xl font-black text-gray-900">▶️ فيديوهات الحل</h1>
+                    <h1 className="text-2xl font-black text-gray-900"><span suppressHydrationWarning>▶️</span> فيديوهات الحل</h1>
                     <p className="text-sm text-gray-500 mt-1">إدارة وإضافة فيديوهات الحل على اليوتيوب</p>
                 </div>
                 <button
@@ -207,7 +204,7 @@ export default function SolutionVideosAdminPage() {
                                                             className="w-20 h-12 rounded-lg object-cover shrink-0 bg-gray-100"
                                                         />
                                                     ) : (
-                                                        <div className="w-20 h-12 rounded-lg bg-gray-100 flex items-center justify-center text-xl shrink-0">▶️</div>
+                                                        <div className="w-20 h-12 rounded-lg bg-gray-100 flex items-center justify-center text-xl shrink-0" suppressHydrationWarning>▶️</div>
                                                     )}
                                                     <div className="min-w-0">
                                                         <p className="font-bold text-gray-900 line-clamp-1">{video.title}</p>
@@ -224,8 +221,8 @@ export default function SolutionVideosAdminPage() {
                                                 <button
                                                     onClick={() => handleTogglePublish(video)}
                                                     className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${video.isPublished
-                                                            ? 'bg-green-100 text-green-700 hover:bg-green-200'
-                                                            : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                                                        ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                                                        : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
                                                         }`}
                                                 >
                                                     {video.isPublished ? '✅ منشور' : '⏸ مسودة'}

@@ -1,7 +1,11 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { useParentContext } from '@/components/parent/ParentContext';
+import { gradeLabel } from '@/lib/constants/grades';
+import { formatDate } from '@/lib/utils/helpers';
 import Link from 'next/link';
+
+
 
 export default function ParentDashboardPage() {
     const { selectedStudent, loading: contextLoading } = useParentContext();
@@ -74,7 +78,7 @@ export default function ParentDashboardPage() {
                         <h1 className="text-3xl font-black mb-2">{studentInfo.name}</h1>
                         <div className="flex flex-wrap items-center justify-center sm:justify-start gap-3">
                             <span className="bg-white/20 backdrop-blur-md px-4 py-1.5 rounded-full text-sm font-bold border border-white/20">
-                                {studentInfo.grade === 'third_preparatory' ? 'الصف الثالث الإعدادي' : 'المرحلة الثانوية'}
+                                {gradeLabel(studentInfo.grade)}
                             </span>
                             <span className="bg-gold/90 text-forest-dark px-4 py-1.5 rounded-full text-sm font-black shadow-md flex items-center gap-1">
                                 🌟 {overview.points} نقطة
@@ -121,9 +125,10 @@ export default function ParentDashboardPage() {
                                 <div>
                                     <h4 className="font-bold text-gray-900 mb-1">{exam.examRef?.title || 'امتحان بدون عنوان'}</h4>
                                     <div className="text-sm text-gray-500 flex gap-4">
-                                        <span>التاريخ: {new Date(exam.submittedAt).toLocaleDateString('ar-EG')}</span>
+                                        <span suppressHydrationWarning>التاريخ: {formatDate(exam.submittedAt)}</span>
                                         <span className="font-bold text-forest">{exam.examRef?.subject || 'عام'}</span>
                                     </div>
+
                                 </div>
                                 <div className="flex items-center gap-3">
                                     <div className={`px-4 py-1.5 rounded-full font-bold text-sm ${exam.passed ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>

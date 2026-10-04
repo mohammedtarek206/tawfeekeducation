@@ -92,7 +92,7 @@ export default function RootLayout({
     };
 
     return (
-        <html lang="ar" dir="rtl">
+        <html lang="ar" dir="rtl" suppressHydrationWarning>
             <head>
                 <link rel="preconnect" href="https://fonts.googleapis.com" />
                 <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
@@ -114,11 +114,12 @@ export default function RootLayout({
                     dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
                 />
             </head>
-            <body className="font-arabic antialiased bg-white text-gray-900">
+            <body className="font-arabic antialiased bg-white text-gray-900" suppressHydrationWarning>
                 {children}
                 <ServiceWorkerRegister />
                 <PWAInstallBanner />
             </body>
         </html>
     );
+
 }

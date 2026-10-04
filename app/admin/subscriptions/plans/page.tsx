@@ -5,7 +5,7 @@ import { ACTIVE_GRADES, gradeLabel } from '@/lib/constants/grades';
 
 
 const DEFAULT_FORM = {
-    name: '', grade: 'third_preparatory', description: '',
+    name: '', grade: 'first_secondary', description: '',
     type: 'monthly', durationInDays: 30, price: 0, originalPrice: 0,
     discountPercentage: 0, offerEnabled: false, offerType: 'NONE',
     offerLimit: 0, features: '', active: true,

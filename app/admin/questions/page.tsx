@@ -29,7 +29,7 @@ export default function AdminQuestionsPage() {
         text: '',
         options: ['', '', '', ''],
         correctIndex: 0,
-        grade: 'third_preparatory',
+        grade: 'first_secondary',
         subject: '',
         difficulty: 'medium',
         lessonRef: '',
@@ -83,7 +83,7 @@ export default function AdminQuestionsPage() {
             if (!data.success) { setError(data.message || 'حدث خطأ'); return; }
             setSuccess('تم إضافة السؤال بنجاح ✅');
             setShowForm(false);
-            setForm({ text: '', options: ['', '', '', ''], correctIndex: 0, grade: 'third_preparatory', subject: '', difficulty: 'medium', lessonRef: '' });
+            setForm({ text: '', options: ['', '', '', ''], correctIndex: 0, grade: 'first_secondary', subject: '', difficulty: 'medium', lessonRef: '' });
             load();
             setTimeout(() => setSuccess(''), 3000);
         } catch {
