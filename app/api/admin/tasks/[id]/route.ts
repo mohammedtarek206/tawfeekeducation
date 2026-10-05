@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/db/connect';
 import Task from '@/lib/db/models/Task';
 import { withAdmin } from '@/lib/auth/middleware';
+import mongoose from 'mongoose';
 
 async function putHandler(req: NextRequest, ctx: unknown): Promise<NextResponse> {
     await connectDB();
@@ -12,7 +13,6 @@ async function putHandler(req: NextRequest, ctx: unknown): Promise<NextResponse>
     let updateBody = { ...body };
 
     if (updateBody.targetAudience === 'specific_students' && typeof updateBody.specificStudents === 'string') {
-        const { default: mongoose } = await import('mongoose');
         const items = updateBody.specificStudents.split(',').map((s: string) => s.trim()).filter(Boolean);
         const phones = items.filter((s: string) => /^01[0-9]{9}$/.test(s));
         const customIds = items.filter((s: string) => mongoose.Types.ObjectId.isValid(s));
