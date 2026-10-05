@@ -2,9 +2,9 @@ import BlockedFeaturePage from '@/components/public/BlockedFeaturePage';
 import { Metadata } from 'next';
 
 export const metadata: Metadata = {
-    title: 'نظام الجوائز والنقاط | أبو زيد',
+    title: 'نظام الجوائز والنقاط | منصة التوفيق',
     description:
-        'اجمع النقاط واكسب الجوائز من خلال دراسة الدراسات الاجتماعية والجغرافيا والتاريخ مع منصة أبو زيد.',
+        'اجمع النقاط واكسب الجوائز من خلال دراسة الدراسات الاجتماعية والتاريخ مع منصة التوفيق.',
     robots: { index: false, follow: false },
 };
 

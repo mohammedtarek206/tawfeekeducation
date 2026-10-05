@@ -2,9 +2,9 @@
 import { useEffect, useState } from 'react';
 import { ACTIVE_GRADES, gradeShort } from '@/lib/constants/grades';
 
+// الجغرافيا مؤرشفة — لا تظهر للمحتوى الجديد
 const SUBJECTS = [
     { value: 'history', label: 'التاريخ' },
-    { value: 'geography', label: 'الجغرافيا' },
     { value: 'social_studies', label: 'الدراسات الاجتماعية' },
 ];
 

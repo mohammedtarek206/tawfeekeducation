@@ -87,7 +87,7 @@ export default function StudentDashboardOverview() {
                             <span className="text-xl">🧭</span>
                         </h1>
                         <p className="text-white/80">
-                            استمر في الاستكشاف! لديك الآن <span className="font-bold text-gold px-1">{student.points}</span> نقطة جغرافية.
+                            استمر في الاستكشاف! لديك الآن <span className="font-bold text-gold px-1">{student.points}</span> نقطة تعليمية.
                         </p>
                         {taskSummary?.new > 0 && (
                             <div className="mt-2 inline-flex items-center gap-2 bg-white/20 backdrop-blur-sm rounded-full px-3 py-1 text-sm font-bold">
@@ -349,7 +349,7 @@ export default function StudentDashboardOverview() {
                         <div className="absolute inset-0 contour-bg opacity-30 pointer-events-none" />
                         <div className="relative z-10">
                             <div className="text-3xl mb-2">🧭</div>
-                            <h3 className="font-bold text-lg mb-1 text-forest">اكسب نقاط جغرافيا!</h3>
+                            <h3 className="font-bold text-lg mb-1 text-forest">اكسب نقاطاً تفاعلية!</h3>
                             <p className="text-sm text-muted mb-4">شارك كود الدعوة بتاعك مع صحابك واكسب 30 نقطة.</p>
                             <div className="bg-white border text-center border-earth/60 rounded-lg p-3 font-mono font-bold text-lg text-forest mb-2 select-all shadow-sm">
                                 {student.referralCode}

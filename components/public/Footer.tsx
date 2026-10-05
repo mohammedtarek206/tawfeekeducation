@@ -12,7 +12,6 @@ const quickLinks = [
 ];
 
 const subjects = [
-    { label: 'الجغرافيا', href: '#subjects' },
     { label: 'التاريخ', href: '#subjects' },
     { label: 'الدراسات الاجتماعية', href: '#subjects' },
 ];
@@ -58,7 +57,7 @@ export default function Footer() {
                         </div>
 
                         <p className="text-earth/60 text-sm leading-relaxed max-w-xs mb-7">
-                            منصة مستر أبو زيد التعليمية — متخصصة في الجغرافيا والتاريخ والدراسات الاجتماعية.
+                            منصة مستر أبو زيد التعليمية — متخصصة في التاريخ والدراسات الاجتماعية.
                             التوفيق معك لآخر الطريق ✨
                         </p>
 

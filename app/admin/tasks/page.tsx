@@ -179,7 +179,7 @@ export default function AdminTasksPage() {
                                 <input
                                     type="text"
                                     className="input-field"
-                                    placeholder="مثال: مشاهدة درس جغرافيا الأسبوع"
+                                    placeholder="مثال: مشاهدة درس التاريخ الأسبوعي"
                                     required
                                     value={form.title}
                                     onChange={(e) => setForm({ ...form, title: e.target.value })}

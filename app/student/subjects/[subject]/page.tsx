@@ -2,11 +2,14 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 
+// الجغرافيا مؤرشفة — لا تظهر للطلاب
 const SUBJECT_LABLES: Record<string, string> = {
     'history': 'التاريخ',
-    'geography': 'الجغرافيا',
-    'social_studies': 'الدراسات الاجتماعية'
+    'social_studies': 'الدراسات الاجتماعية',
 };
+
+// المواد المتاحة
+const ACTIVE_SUBJECTS = Object.keys(SUBJECT_LABLES);
 
 export default function SubjectLessonsPage({ params }: { params: { subject: string } }) {
     const [lessons, setLessons] = useState<any[]>([]);
@@ -27,6 +30,14 @@ export default function SubjectLessonsPage({ params }: { params: { subject: stri
             })
             .catch(() => setError('حدث خطأ أثناء تحميل الحصص.'))
             .finally(() => setLoading(false));
+    }, [params.subject]);
+
+
+    // إذا حاول طالب الوصول لمادة غير نشطة (كالجغرافيا) — تحويل لصفحة الدروس
+    useEffect(() => {
+        if (!ACTIVE_SUBJECTS.includes(params.subject)) {
+            window.location.replace('/student/lessons');
+        }
     }, [params.subject]);
 
     const subjectName = SUBJECT_LABLES[params.subject] || params.subject;

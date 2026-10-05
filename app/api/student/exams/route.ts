@@ -18,6 +18,7 @@ async function getHandler(req: NextRequest, _ctx: unknown, student: JWTPayload):
 
     const filter: Record<string, unknown> = {
         isPublished: true,
+        subject: { $ne: 'geography' }, // الجغرافيا مؤرشفة — لا تُرجع للطلاب
     };
     if (studentUser.grade && studentUser.grade.trim() !== '') {
         filter.grade = studentUser.grade;

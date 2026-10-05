@@ -58,7 +58,7 @@ function TeacherImage() {
                 {/* Image */}
                 <img
                     src="/هلا بكم.jpg"
-                    alt="مستر أبو زيد - خبير الجغرافيا والتاريخ"
+                    alt="مستر أبو زيد - خبير التاريخ والدراسات الاجتماعية"
                     className="w-full h-auto object-cover object-top block"
                     onError={(e) => {
                         // Fallback if image not found yet

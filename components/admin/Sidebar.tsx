@@ -15,7 +15,7 @@ const LINKS = [
     { href: '/admin/subscriptions/payment-methods', label: 'طرق الدفع', icon: '💵' },
     { href: '/admin/students', label: 'الطلاب والموافقات', icon: '👥' },
     { href: '/admin/parents', label: 'أولياء الأمور', icon: '👨‍👩‍👧‍👦' },
-    { href: '/admin/free-students', label: 'الطلاب المجانيين', icon: '🎁' },
+    { href: '/admin/free-students', label: 'العروض والطلاب المجانيين', icon: '🎁' },
     { href: '/admin/lessons', label: 'إدارة الحصص', icon: '🎬' },
     { href: '/admin/questions', label: 'بنك الأسئلة', icon: '💾' },
     { href: '/admin/questions/import', label: 'استيراد أسئلة', icon: '📥' },

@@ -3,25 +3,8 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 
+// الجغرافيا مؤرشفة — محذوفة من الصفحة الرئيسية
 const subjects = [
-    {
-        id: 'geography',
-        label: 'الجغرافيا',
-        tagline: 'اكتشف العالم من حولك',
-        description: 'دراسة الظواهر الطبيعية والبشرية على الكرة الأرضية — من الأنهار والجبال إلى المدن والسكان.',
-        icon: (
-            <svg viewBox="0 0 48 48" className="w-12 h-12" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <circle cx="24" cy="24" r="18" stroke="currentColor" strokeWidth="1.5" />
-                <ellipse cx="24" cy="24" rx="10" ry="18" stroke="currentColor" strokeWidth="1" opacity="0.5" />
-                <path d="M6 24h36M6 18h36M6 30h36" stroke="currentColor" strokeWidth="1" opacity="0.4" strokeDasharray="3 2" />
-                <circle cx="30" cy="18" r="2.5" fill="#C9A227" />
-            </svg>
-        ),
-        color: 'from-geo/10 to-geo/5',
-        accent: '#356B7A',
-        lessons: 42,
-        badge: 'الأكثر تفاعلاً',
-    },
     {
         id: 'history',
         label: 'التاريخ',
@@ -46,7 +29,7 @@ const subjects = [
         badge: 'الأكثر غنى',
     },
     {
-        id: 'social',
+        id: 'social_studies',
         label: 'الدراسات الاجتماعية',
         tagline: 'افهم المجتمع والعالم من حولك',
         description: 'فهم العلاقات الإنسانية، الاقتصاد، السياسة، والمجتمع — أدوات لفهم العالم المعاصر.',
@@ -89,7 +72,7 @@ export default function FeaturesSection() {
                 <div className="absolute top-0 right-0 w-96 h-96 rounded-full opacity-40"
                     style={{ background: 'radial-gradient(circle, rgba(201,162,39,0.06) 0%, transparent 70%)' }} />
                 <div className="absolute bottom-0 left-0 w-96 h-80 rounded-full opacity-40"
-                    style={{ background: 'radial-gradient(circle, rgba(53,107,122,0.07) 0%, transparent 70%)' }} />
+                    style={{ background: 'radial-gradient(circle, rgba(18,60,50,0.07) 0%, transparent 70%)' }} />
             </div>
 
             <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -103,12 +86,12 @@ export default function FeaturesSection() {
                     </div>
                     <h2 className="section-title text-center">استكشف عالم المعرفة</h2>
                     <p className="section-subtitle mx-auto text-center">
-                        ثلاث مواد متخصصة تغطي الجغرافيا والتاريخ والدراسات الاجتماعية بمنهج متكامل ومتفاعل.
+                        مواد متخصصة تغطي التاريخ والدراسات الاجتماعية بمنهج متكامل ومتفاعل.
                     </p>
                 </div>
 
                 {/* Subject Cards */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-3xl mx-auto">
                     {subjects.map((subject, i) => (
                         <div
                             key={subject.id}

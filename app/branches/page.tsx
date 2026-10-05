@@ -4,10 +4,10 @@ import Footer from '@/components/public/Footer';
 import Link from 'next/link';
 
 export const metadata: Metadata = {
-    title: 'فروعنا | أبو زيد للدراسات والجغرافيا والتاريخ',
-    description: 'تعرف على فروع وسناتر أستاذ أبو زيد للدراسات الاجتماعية والجغرافيا والتاريخ.',
+    title: 'فروعنا | منصة التوفيق التعليمية',
+    description: 'تعرف على فروع وسناتر أستاذ أبو زيد للدراسات الاجتماعية والتاريخ.',
     openGraph: {
-        title: 'فروعنا | أبو زيد',
+        title: 'فروعنا | منصة التوفيق',
         description: 'فروع وسناتر أستاذ أبو زيد.',
         locale: 'ar_EG',
         type: 'website',
@@ -22,7 +22,6 @@ export default function BranchesPage() {
                 <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
                     <h1 className="text-4xl font-black text-tawfeek-primary mb-6">فروعنا للسناتر</h1>
 
-                    {/* Re-use the existing BranchesSection component here if it's modular, but since it's already used on the homepage, let's create a visual for it. */}
                     <div className="bg-white rounded-3xl p-8 sm:p-12 shadow-sm border border-tawfeek-border">
                         <div className="text-6xl mb-6">📍</div>
                         <h2 className="text-2xl font-bold text-tawfeek-text mb-4">يتم تجهيز بيانات الفروع</h2>

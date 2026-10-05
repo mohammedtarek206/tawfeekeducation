@@ -18,14 +18,14 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
         await connectDB();
         const lesson = await Lesson.findById(params.id).lean();
 
-        if (!lesson || !lesson.isPublished) {
-            return { title: 'حصة غير متوفرة | أبو زيد' };
+        if (!lesson || !lesson.isPublished || lesson.subject === 'geography') {
+            return { title: 'حصة غير متوفرة | منصة التوفيق' };
         }
 
         const subjectName = lesson.subject || 'الدراسات الاجتماعية';
         const gradeName = gradeLabel(lesson.grade) || 'الطلاب';
-        const title = `${lesson.title} | ${subjectName} | أبو زيد`;
-        const description = `شرح درس ${lesson.title} في مادة ${subjectName} لطلاب ${gradeName} مع أستاذ أبو زيد. ${lesson.description || 'فيديو شرح، أسئلة ومراجعات.'}`;
+        const title = `${lesson.title} | ${subjectName} | منصة التوفيق`;
+        const description = `شرح درس ${lesson.title} في مادة ${subjectName} لطلاب ${gradeName} مع منصة التوفيق. ${lesson.description || 'فيديو شرح، أسئلة ومراجعات.'}`;
 
         const url = `${SITE_URL}/lessons/${params.id}`;
         const imageUrl = lesson.thumbnail || (lesson.youtubeId ? `https://img.youtube.com/vi/${lesson.youtubeId}/maxresdefault.jpg` : `${SITE_URL}/لوجو.jpg`);
@@ -49,12 +49,12 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
             },
         };
     } catch (error) {
-        return { title: 'تفاصيل الحصة | أبو زيد' };
+        return { title: 'تفاصيل الحصة | منصة التوفيق' };
     }
 }
 
 export default async function PublicLessonPage({ params }: Props) {
-    let lesson = null;
+    let lesson: any = null;
     try {
         await connectDB();
         lesson = await Lesson.findById(params.id).lean();
@@ -62,7 +62,7 @@ export default async function PublicLessonPage({ params }: Props) {
         // ignore
     }
 
-    if (!lesson || !lesson.isPublished) {
+    if (!lesson || !lesson.isPublished || lesson.subject === 'geography') {
         notFound();
     }
 
@@ -77,7 +77,7 @@ export default async function PublicLessonPage({ params }: Props) {
         description: lesson.description || `درس شامل في مادة ${subjectName}`,
         provider: {
             '@type': 'Organization',
-            name: 'أبو زيد للدراسات والجغرافيا والتاريخ',
+            name: 'منصة التوفيق التعليمية',
             sameAs: SITE_URL
         }
     };

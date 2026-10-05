@@ -7,9 +7,10 @@ import { ACTIVE_GRADES, gradeLabel } from '@/lib/constants/grades';
 
 
 
+// الجغرافيا مؤرشفة — محذوفة من خيارات الامتحانات الجديدة
 const SUBJECT_LABELS: Record<string, string> = {
     history: 'التاريخ',
-    geography: 'الجغرافيا',
+    geography: 'الجغرافيا (مؤرشف)', // لعرض البيانات القديمة فقط
     social_studies: 'الدراسات الاجتماعية',
 };
 

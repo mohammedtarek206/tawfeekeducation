@@ -65,7 +65,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     let lessonPages: MetadataRoute.Sitemap = [];
     try {
         await connectDB();
-        const lessons = await Lesson.find({ isPublished: true })
+        const lessons = await Lesson.find({ isPublished: true, subject: { $ne: 'geography' } })
             .select('_id updatedAt')
             .lean()
             .limit(500);

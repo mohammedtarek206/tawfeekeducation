@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { revalidatePath } from 'next/cache';
 import connectDB from '@/lib/db/connect';
 import Settings from '@/lib/db/models/Settings';
 import { withAdmin } from '@/lib/auth/middleware';
@@ -40,6 +41,19 @@ async function patchHandler(req: NextRequest, _ctx: unknown, admin: JWTPayload):
         action: AUDIT_ACTIONS.SETTINGS_CHANGED,
         metadata: { updatedKeys: updates.map((u: { key: string }) => u.key) },
     });
+
+    // تحديث الصفحة الرئيسية تلقائياً بعد تغيير إعدادات العروض
+    const offerKeys = [
+        'free_offer_enabled', 'freeOfferEnabled',
+        'free_student_limit', 'freeStudentsLimit',
+        'free_offer_title', 'freeOfferTitle',
+        'free_offer_description', 'freeOfferDescription',
+        'free_offer_duration', 'freeOfferDuration',
+    ];
+    const hasOfferChange = updates.some((u: { key: string }) => offerKeys.includes(u.key));
+    if (hasOfferChange) {
+        revalidatePath('/');
+    }
 
     return NextResponse.json({ success: true, message: 'تم حفظ الإعدادات' });
 }

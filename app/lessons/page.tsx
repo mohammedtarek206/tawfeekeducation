@@ -5,23 +5,23 @@ import Link from 'next/link';
 import { Metadata } from 'next';
 
 export const metadata: Metadata = {
-    title: 'دروس الدراسات والجغرافيا والتاريخ | أبو زيد',
+    title: 'دروس الدراسات الاجتماعية والتاريخ | منصة التوفيق',
     description:
-        'استعرض جميع دروس شرح الدراسات الاجتماعية والجغرافيا والتاريخ مع أستاذ أبو زيد للمرحلة الإعدادية والثانوية.',
+        'استعرض جميع دروس شرح الدراسات الاجتماعية والتاريخ مع منصة التوفيق للمرحلة الإعدادية والثانوية.',
     keywords: [
         'دروس الدراسات الاجتماعية',
-        'شرح الجغرافيا',
+        'شرح الدراسات',
         'شرح التاريخ',
-        'أبو زيد دروس',
-        'مراجعة الجغرافيا',
+        'التوفيق دروس',
+        'مراجعة الدراسات',
         'مراجعة التاريخ',
     ],
     alternates: {
         canonical: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/lessons`,
     },
     openGraph: {
-        title: 'دروس الدراسات والجغرافيا والتاريخ | أبو زيد',
-        description: 'جميع دروس الشرح مع أستاذ أبو زيد للمرحلة الإعدادية والثانوية.',
+        title: 'دروس الدراسات الاجتماعية والتاريخ | منصة التوفيق',
+        description: 'جميع دروس الشرح مع منصة التوفيق للمرحلة الإعدادية والثانوية.',
         locale: 'ar_EG',
         type: 'website',
     },
@@ -39,7 +39,7 @@ export default function LessonsPage() {
                     </p>
                 </div>
 
-                {/* Re-use the LatestLessons component for now or duplicate its logic specifically for a full page */}
+                {/* Re-use the LatestLessons component */}
                 <LatestLessons />
 
                 <div className="max-w-3xl mx-auto px-4 mt-8 pb-12 text-center">

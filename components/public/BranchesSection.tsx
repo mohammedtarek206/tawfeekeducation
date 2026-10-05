@@ -161,7 +161,7 @@ export default function BranchesSection() {
                     <div className="bg-forest text-white px-6 py-4 flex flex-wrap items-center justify-between gap-3">
                         <div>
                             <div className="text-xs text-earth/70 uppercase tracking-widest mb-0.5">منصة التوفيق</div>
-                            <div className="text-sm font-semibold">خرائط تفاعلية لحصص الجغرافيا — قريباً</div>
+                            <div className="text-sm font-semibold">خرائط تاريخية وحضارية تفاعلية — قريباً</div>
                         </div>
                         <div className="flex items-center gap-2 text-xs text-earth/70">
                             <div className="w-2 h-2 rounded-full bg-gold animate-pulse" />

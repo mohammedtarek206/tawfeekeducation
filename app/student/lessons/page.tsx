@@ -3,10 +3,10 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 
+// الجغرافيا مؤرشفة — محذوفة من قائمة الفلاتر
 const SUBJECTS = [
     { value: 'all', label: 'كل المواد' },
     { value: 'history', label: 'التاريخ' },
-    { value: 'geography', label: 'الجغرافيا' },
     { value: 'social_studies', label: 'الدراسات الاجتماعية' },
 ];
 
@@ -70,8 +70,8 @@ export default function StudentLessonsPage() {
                         key={sub.value}
                         onClick={() => setFilterSubject(sub.value)}
                         className={`px-5 py-2.5 rounded-full whitespace-nowrap text-sm font-bold transition-all ${filterSubject === sub.value
-                                ? 'bg-forest text-white shadow-md shadow-forest/20'
-                                : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
+                            ? 'bg-forest text-white shadow-md shadow-forest/20'
+                            : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
                             }`}
                     >
                         {sub.label}

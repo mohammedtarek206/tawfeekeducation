@@ -18,7 +18,10 @@ async function getHandler(req: NextRequest, _ctx: unknown, student: JWTPayload):
     const page = parseInt(searchParams.get('page') || '1');
     const limit = parseInt(searchParams.get('limit') || '20');
 
-    const filter: Record<string, any> = { isPublished: true };
+    const filter: Record<string, any> = {
+        isPublished: true,
+        subject: { $ne: 'geography' }, // الجغرافيا مؤرشفة — لا تُرجع للطلاب
+    };
     if (studentUser.grade && studentUser.grade.trim() !== '') {
         filter.grade = studentUser.grade;
     }

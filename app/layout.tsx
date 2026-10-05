@@ -4,7 +4,7 @@ import ServiceWorkerRegister from '@/components/ServiceWorkerRegister';
 import PWAInstallBanner from '@/components/PWAInstallBanner';
 
 // ─── Site Constants ───────────────────────────────────────────────────────────
-const SITE_NAME = 'أبو زيد للدراسات والجغرافيا والتاريخ';
+const SITE_NAME = 'منصة التوفيق | التاريخ والدراسات الاجتماعية';
 const SITE_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 const LOGO_URL = `${SITE_URL}/لوجو.jpg`;
 
@@ -12,26 +12,25 @@ const LOGO_URL = `${SITE_URL}/لوجو.jpg`;
 export const metadata: Metadata = {
     metadataBase: new URL(SITE_URL),
     title: {
-        default: `${SITE_NAME} | منصة تعليمية`,
-        template: `%s | أبو زيد`,
+        default: `${SITE_NAME}`,
+        template: `%s | منصة التوفيق`,
     },
     description:
-        'منصة أبو زيد التعليمية لشرح الدراسات والجغرافيا والتاريخ، مع الدروس والمراجعات والاختبارات للطلاب.',
+        'منصة التوفيق التعليمية لشرح الدراسات الاجتماعية والتاريخ، مع الدروس والمراجعات والاختبارات للطلاب.',
     keywords: [
-        'أبو زيد للدراسات',
-        'أبو زيد جغرافيا',
-        'أبو زيد تاريخ',
+        'منصة التوفيق',
+        'التوفيق دراسات',
+        'التوفيق تاريخ',
         'شرح الدراسات الاجتماعية',
-        'شرح الجغرافيا',
         'شرح التاريخ',
         'دروس الدراسات الاجتماعية',
         'امتحانات الدراسات الاجتماعية',
         'الدراسات الاجتماعية للصف الثالث الإعدادي',
-        'الدراسات الاجتماعية للصف الأول الثانوي',
+        'التاريخ للمرحلة الثانوية',
     ],
-    authors: [{ name: 'أبو زيد', url: SITE_URL }],
-    creator: 'أبو زيد للدراسات والجغرافيا والتاريخ',
-    publisher: 'أبو زيد للدراسات والجغرافيا والتاريخ',
+    authors: [{ name: 'منصة التوفيق', url: SITE_URL }],
+    creator: 'منصة التوفيق التعليمية',
+    publisher: 'منصة التوفيق التعليمية',
     robots: {
         index: true,
         follow: true,
@@ -47,9 +46,9 @@ export const metadata: Metadata = {
         locale: 'ar_EG',
         url: SITE_URL,
         siteName: SITE_NAME,
-        title: `${SITE_NAME} | منصة تعليمية`,
+        title: `${SITE_NAME}`,
         description:
-            'منصة أبو زيد التعليمية لشرح الدراسات والجغرافيا والتاريخ، مع الدروس والمراجعات والاختبارات للطلاب.',
+            'منصة التوفيق التعليمية لشرح الدراسات الاجتماعية والتاريخ، مع الدروس والمراجعات والاختبارات للطلاب.',
         images: [
             {
                 url: LOGO_URL,
@@ -61,9 +60,9 @@ export const metadata: Metadata = {
     },
     twitter: {
         card: 'summary_large_image',
-        title: `${SITE_NAME} | منصة تعليمية`,
+        title: `${SITE_NAME}`,
         description:
-            'منصة أبو زيد التعليمية لشرح الدراسات والجغرافيا والتاريخ والمراجعات والاختبارات.',
+            'منصة التوفيق التعليمية لشرح الدراسات الاجتماعية والتاريخ والمراجعات والاختبارات.',
         images: [LOGO_URL],
     },
     alternates: {
@@ -80,15 +79,15 @@ export default function RootLayout({
     const structuredData = {
         '@context': 'https://schema.org',
         '@type': 'EducationalOrganization',
-        name: SITE_NAME,
-        alternateName: 'Abu Zaid',
+        name: 'منصة التوفيق التعليمية',
+        alternateName: 'Tawfeek Platform',
         url: SITE_URL,
         logo: LOGO_URL,
         description:
-            'منصة تعليمية متخصصة في الدراسات الاجتماعية والجغرافيا والتاريخ لطلاب المرحلة الإعدادية والثانوية في مصر.',
+            'منصة تعليمية متخصصة في الدراسات الاجتماعية والتاريخ لطلاب المرحلة الإعدادية والثانوية في مصر.',
         areaServed: 'EG',
         inLanguage: 'ar',
-        teaches: ['الدراسات الاجتماعية', 'الجغرافيا', 'التاريخ'],
+        teaches: ['الدراسات الاجتماعية', 'التاريخ'],
     };
 
     return (
@@ -121,5 +120,4 @@ export default function RootLayout({
             </body>
         </html>
     );
-
 }

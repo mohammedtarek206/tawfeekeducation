@@ -11,7 +11,11 @@ export async function GET(req: Request): Promise<NextResponse> {
         const limit = parseInt(searchParams.get('limit') || '6');
         const grade = searchParams.get('grade') || '';
 
-        const filter: Record<string, unknown> = { isPublished: true, showOnHomepage: true };
+        const filter: Record<string, unknown> = {
+            isPublished: true,
+            showOnHomepage: true,
+            subject: { $ne: 'geography' }, // الجغرافيا مؤرشفة
+        };
         if (grade) filter.grade = grade;
 
         const lessons = await Lesson.find(filter)

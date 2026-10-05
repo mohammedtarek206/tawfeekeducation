@@ -6,9 +6,9 @@ export async function GET() {
     try {
         await connectDB();
 
-        // Count published lessons mapped by subject
+        // Count published lessons mapped by subject — الجغرافيا مستثناة
         const statsAggregation = await Lesson.aggregate([
-            { $match: { isPublished: true } },
+            { $match: { isPublished: true, subject: { $ne: 'geography' } } },
             { $group: { _id: "$subject", count: { $sum: 1 } } }
         ]);
 
