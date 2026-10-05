@@ -7,6 +7,8 @@ import { useEffect, useState } from 'react';
 
 const LINKS = [
     { href: '/student/dashboard', label: 'الرئيسية', icon: '🏠' },
+    { href: '/student/tasks', label: 'مهامي', icon: '🎯' },
+    { href: '/student/achievements', label: 'الأوسمة والإنجازات', icon: '🏆' },
     { href: '/student/subscriptions', label: 'الاشتراكات', icon: '⭐' },
     { href: '/student/lessons', label: 'الحصص', icon: '🎬' },
     { href: '/student/lesson-quizzes', label: 'اختبارات الحصص', icon: '📝' },
@@ -18,7 +20,7 @@ const LINKS = [
     { href: '/student/study-notes', label: 'مذكرات س/ج', icon: '📚' },
     { href: '/student/ask-master', label: 'اسأل المستر', icon: '🤖' },
     { href: '/student/rewards', label: 'الجوائز', icon: '🎁' },
-    { href: '/student/leaderboard', label: 'لوحة الشرف', icon: '🏆' },
+    { href: '/student/leaderboard', label: 'لوحة الشرف', icon: '🥇' },
 ];
 
 

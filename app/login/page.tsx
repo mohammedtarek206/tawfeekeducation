@@ -3,8 +3,10 @@
 import { useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-
+import clsx from 'clsx';
 // noindex for /login is enforced via middleware X-Robots-Tag header
+
+type LoginRole = 'student' | 'parent' | 'admin';
 
 function LoginForm() {
     const router = useRouter();
@@ -12,6 +14,7 @@ function LoginForm() {
     const callbackUrl = searchParams.get('callbackUrl');
     const planId = searchParams.get('planId');
 
+    const [role, setRole] = useState<LoginRole>('student');
     const [form, setForm] = useState({ phone: '', password: '' });
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
@@ -22,7 +25,8 @@ function LoginForm() {
         setError('');
 
         try {
-            const res = await fetch('/api/auth/login', {
+            const endpoint = role === 'admin' ? '/api/auth/admin-login' : '/api/auth/login';
+            const res = await fetch(endpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(form),
@@ -44,9 +48,10 @@ function LoginForm() {
                 return;
             }
 
-            // Redirect based on role and callback
-            const role = data.data.user.role;
-            if (role === 'parent') {
+            // Redirect based on role
+            if (role === 'admin') {
+                router.push('/admin/dashboard');
+            } else if (data.data.user.role === 'parent') {
                 router.push('/parent/dashboard');
             } else {
                 if (callbackUrl && callbackUrl.startsWith('/') && !callbackUrl.startsWith('//')) {
@@ -80,12 +85,46 @@ function LoginForm() {
                         </div>
                         <h1 className="text-2xl font-black text-forest">منصة التوفيق</h1>
                     </Link>
-                    <p className="text-[#7A8C85] font-medium mt-1">مرحباً بك مجدداً 👋</p>
+                    <p className="text-[#7A8C85] font-medium mt-1">تسجيل الدخول إلى حسابك</p>
                 </div>
 
                 {/* Card */}
                 <div className="bg-white/80 backdrop-blur-xl rounded-3xl shadow-forest border border-earth/40 p-8">
-                    <h2 className="text-2xl font-bold text-darktext mb-6 text-center">تسجيل الدخول</h2>
+                    <h2 className="text-xl font-bold text-darktext mb-4 text-center">اختر نوع الحساب</h2>
+
+                    {/* Role Selection Tabs */}
+                    <div className="flex bg-earth/20 p-1 rounded-xl mb-6">
+                        <button
+                            type="button"
+                            onClick={() => { setRole('student'); setError(''); setForm({ phone: '', password: '' }); }}
+                            className={clsx(
+                                "flex-1 py-2 text-sm font-bold rounded-lg transition-all",
+                                role === 'student' ? "bg-white text-forest shadow-sm" : "text-darktext/60 hover:text-darktext"
+                            )}
+                        >
+                            طالب
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => { setRole('parent'); setError(''); setForm({ phone: '', password: '' }); }}
+                            className={clsx(
+                                "flex-1 py-2 text-sm font-bold rounded-lg transition-all",
+                                role === 'parent' ? "bg-white text-forest shadow-sm" : "text-darktext/60 hover:text-darktext"
+                            )}
+                        >
+                            ولي أمر
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => { setRole('admin'); setError(''); setForm({ phone: '', password: '' }); }}
+                            className={clsx(
+                                "flex-1 py-2 text-sm font-bold rounded-lg transition-all",
+                                role === 'admin' ? "bg-white text-forest shadow-sm" : "text-darktext/60 hover:text-darktext"
+                            )}
+                        >
+                            أدمن
+                        </button>
+                    </div>
 
                     {error && (
                         <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 mb-6 text-sm text-center">
@@ -100,7 +139,7 @@ function LoginForm() {
                                 id="phone"
                                 type="tel"
                                 inputMode="numeric"
-                                placeholder="01xxxxxxxxx"
+                                placeholder={role === 'admin' ? "رقم هاتف الإدارة" : "01xxxxxxxxx"}
                                 value={form.phone}
                                 onChange={(e) => setForm({ ...form, phone: e.target.value })}
                                 className="input-field"
@@ -144,14 +183,16 @@ function LoginForm() {
                         </button>
                     </form>
 
-                    <div className="mt-6 text-center">
-                        <p className="text-muted text-sm font-medium">
-                            ليس لديك حساب؟{' '}
-                            <Link href={`/register${planId ? `?planId=${planId}` : callbackUrl ? `?callbackUrl=${encodeURIComponent(callbackUrl)}` : ''}`} className="text-gold font-bold hover:text-gold-dark transition-colors">
-                                سجل الآن
-                            </Link>
-                        </p>
-                    </div>
+                    {role !== 'admin' && (
+                        <div className="mt-6 text-center">
+                            <p className="text-muted text-sm font-medium">
+                                ليس لديك حساب؟{' '}
+                                <Link href={`/register${planId ? `?planId=${planId}` : callbackUrl ? `?callbackUrl=${encodeURIComponent(callbackUrl)}` : ''}`} className="text-gold font-bold hover:text-gold-dark transition-colors">
+                                    إنشاء حساب جديد
+                                </Link>
+                            </p>
+                        </div>
+                    )}
                 </div>
 
                 <div className="text-center mt-6">

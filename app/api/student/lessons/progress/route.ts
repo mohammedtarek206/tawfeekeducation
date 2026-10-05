@@ -7,6 +7,7 @@ import { withStudent } from '@/lib/auth/middleware';
 import { JWTPayload } from '@/lib/auth/jwt';
 import { awardPoints } from '@/lib/gamification/engine';
 import { updateStreak } from '@/lib/gamification/engine';
+import { checkAndAwardAchievements } from '@/lib/utils/achievements';
 import mongoose from 'mongoose';
 
 // POST /api/student/lessons/progress - update video progress
@@ -99,6 +100,8 @@ async function postHandler(req: NextRequest, _ctx: unknown, student: JWTPayload)
 
         // Update streak
         await updateStreak(student.userId);
+        // Check achievements (lessons, streak, points)
+        checkAndAwardAchievements(student.userId).catch(() => { });
     } else if (safePercentage > 5 && !existing?.pointsAwarded) {
         // Award watch start points (one time)
         const watchStartPoints = parseInt(process.env.DEFAULT_LESSON_WATCH_POINTS || '5');

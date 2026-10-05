@@ -13,6 +13,8 @@ export type NotificationType =
     | 'booking_confirmed'
     | 'homework'
     | 'announcement'
+    | 'task'
+    | 'achievement'
     | 'general';
 
 export interface INotification extends Document {
@@ -44,6 +46,8 @@ const NotificationSchema = new Schema<INotification>(
                 'booking_confirmed',
                 'homework',
                 'announcement',
+                'task',
+                'achievement',
                 'general',
             ],
             required: true,

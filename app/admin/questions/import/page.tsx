@@ -7,7 +7,10 @@ import { SUBJECTS } from '@/lib/constants/subjects';
 interface ParsedQuestion {
     index: number;
     text: string;
-    answer: string;
+    answer?: string;
+    options?: string[];
+    correctAnswer?: string;
+    type?: string;
     valid: boolean;
     isDuplicate: boolean;
     error?: string;
@@ -27,6 +30,8 @@ const DIFFICULTY_OPTS = [
 ];
 
 export default function QuestionImportPage() {
+    const [importMethod, setImportMethod] = useState<'manual' | 'drive'>('manual');
+    const [driveUrl, setDriveUrl] = useState('');
     const [rawText, setRawText] = useState('');
     const [grade, setGrade] = useState('');
     const [subject, setSubject] = useState('');
@@ -40,14 +45,18 @@ export default function QuestionImportPage() {
     const [importResult, setImportResult] = useState<{ count: number } | null>(null);
 
     const handleParse = async () => {
-        if (!rawText.trim()) { setError('يرجى إدخال النص أولاً'); return; }
+        if (importMethod === 'manual' && !rawText.trim()) { setError('يرجى إدخال النص أولاً'); return; }
+        if (importMethod === 'drive' && !driveUrl.trim()) { setError('يرجى إدخال رابط Google Drive'); return; }
         setLoading(true);
         setError('');
         try {
-            const res = await fetch('/api/admin/questions/parse', {
+            const apiPath = importMethod === 'drive' ? '/api/admin/questions/parse-drive' : '/api/admin/questions/parse';
+            const bodyPayload = importMethod === 'drive' ? { url: driveUrl } : { text: rawText };
+
+            const res = await fetch(apiPath, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ text: rawText }),
+                body: JSON.stringify(bodyPayload),
             });
             const json = await res.json();
             if (!res.ok || !json.success) { setError(json.message); return; }
@@ -94,7 +103,7 @@ export default function QuestionImportPage() {
     };
 
     const reset = () => {
-        setRawText(''); setGrade(''); setSubject(''); setDifficulty('medium');
+        setRawText(''); setDriveUrl(''); setGrade(''); setSubject(''); setDifficulty('medium');
         setStep('input'); setError(''); setPreview([]); setStats(null);
         setSkipped(new Set()); setImportResult(null);
     };
@@ -121,7 +130,7 @@ export default function QuestionImportPage() {
                 {(['input', 'preview', 'done'] as const).map((s, i) => (
                     <div key={s} className="flex items-center gap-2">
                         <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${step === s ? 'bg-forest text-white' :
-                                (step === 'preview' && i === 0) || step === 'done' ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-500'
+                            (step === 'preview' && i === 0) || step === 'done' ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-500'
                             }`}>
                             {(step === 'preview' && i === 0) || (step === 'done' && i < 2) ? '✓' : i + 1}
                         </div>
@@ -136,34 +145,76 @@ export default function QuestionImportPage() {
             {/* ── STEP 1: INPUT ── */}
             {step === 'input' && (
                 <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-5">
-                    <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800 space-y-1">
-                        <div className="font-bold mb-2">📋 الصيغ المدعومة:</div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 font-mono text-xs">
-                            <div className="bg-white rounded-lg p-2 border border-blue-100">
-                                <div className="font-bold text-blue-700 mb-1">الصيغة العربية:</div>
-                                <div>س: ما عاصمة مصر؟</div>
-                                <div>ج: القاهرة</div>
-                            </div>
-                            <div className="bg-white rounded-lg p-2 border border-blue-100">
-                                <div className="font-bold text-blue-700 mb-1">الصيغة الإنجليزية:</div>
-                                <div>Q: What is the capital?</div>
-                                <div>A: Cairo</div>
-                            </div>
-                        </div>
+
+                    {/* Method Selector Tabs */}
+                    <div className="flex bg-gray-100 p-1 rounded-xl mb-4">
+                        <button
+                            type="button"
+                            onClick={() => { setImportMethod('manual'); setError(''); }}
+                            className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${importMethod === 'manual' ? "bg-white text-forest shadow-sm" : "text-gray-500 hover:text-gray-700"
+                                }`}
+                        >
+                            إدخال يدوي
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => { setImportMethod('drive'); setError(''); }}
+                            className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${importMethod === 'drive' ? "bg-white text-forest shadow-sm" : "text-gray-500 hover:text-gray-700"
+                                }`}
+                        >
+                            استيراد من Google Drive
+                        </button>
                     </div>
 
-                    <div>
-                        <label className="block text-sm font-bold text-gray-700 mb-2">النص (الأسئلة والإجابات) *</label>
-                        <textarea
-                            value={rawText}
-                            onChange={(e) => setRawText(e.target.value)}
-                            placeholder={`س: ما عاصمة مصر؟\nج: القاهرة\n\nس: ما أطول نهر في العالم؟\nج: نهر النيل`}
-                            rows={12}
-                            className="w-full border border-gray-200 rounded-xl p-4 text-sm font-mono leading-relaxed focus:outline-none focus:border-forest resize-y"
-                            dir="auto"
-                        />
-                        <div className="text-xs text-gray-400 mt-1 text-left">{rawText.length} حرف</div>
-                    </div>
+                    {importMethod === 'manual' ? (
+                        <>
+                            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800 space-y-1">
+                                <div className="font-bold mb-2">📋 الصيغ المدعومة:</div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 font-mono text-xs">
+                                    <div className="bg-white rounded-lg p-2 border border-blue-100">
+                                        <div className="font-bold text-blue-700 mb-1">الصيغة العربية:</div>
+                                        <div>س: ما عاصمة مصر؟</div>
+                                        <div>ج: القاهرة</div>
+                                    </div>
+                                    <div className="bg-white rounded-lg p-2 border border-blue-100">
+                                        <div className="font-bold text-blue-700 mb-1">الصيغة الإنجليزية:</div>
+                                        <div>Q: What is the capital?</div>
+                                        <div>A: Cairo</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-bold text-gray-700 mb-2">النص (الأسئلة والإجابات) *</label>
+                                <textarea
+                                    value={rawText}
+                                    onChange={(e) => setRawText(e.target.value)}
+                                    placeholder={`س: ما عاصمة مصر؟\nج: القاهرة\n\nس: ما أطول نهر في العالم؟\nج: نهر النيل`}
+                                    rows={12}
+                                    className="w-full border border-gray-200 rounded-xl p-4 text-sm font-mono leading-relaxed focus:outline-none focus:border-forest resize-y"
+                                    dir="auto"
+                                />
+                                <div className="text-xs text-gray-400 mt-1 text-left">{rawText.length} حرف</div>
+                            </div>
+                        </>
+                    ) : (
+                        <div>
+                            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800 mb-4">
+                                <div className="font-bold mb-1">⚠️ تنبيه بشأن صلاحيات الملف:</div>
+                                <div>تأكد أن الملف متاح الوصول (Anyone with the link) حتى يتمكن النظام من قراءته.</div>
+                                <div className="mt-1">الملفات المدعومة: Google Docs, Google Sheets, PDF (أقل من 3 ميجا).</div>
+                            </div>
+                            <label className="block text-sm font-bold text-gray-700 mb-2">رابط ملف Google Drive *</label>
+                            <input
+                                type="url"
+                                value={driveUrl}
+                                onChange={(e) => setDriveUrl(e.target.value)}
+                                placeholder="https://drive.google.com/file/d/FILE_ID/view"
+                                className="w-full border border-gray-200 rounded-xl p-3 text-sm focus:outline-none focus:border-forest text-left"
+                                dir="ltr"
+                            />
+                        </div>
+                    )}
 
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         <div>
@@ -192,10 +243,10 @@ export default function QuestionImportPage() {
 
                     <button
                         onClick={handleParse}
-                        disabled={loading || !rawText.trim()}
+                        disabled={loading || (importMethod === 'manual' ? !rawText.trim() : !driveUrl.trim())}
                         className="w-full py-3 bg-forest text-white rounded-xl font-bold text-sm hover:bg-forest/90 disabled:opacity-50 transition-colors"
                     >
-                        {loading ? '⏳ جاري التحليل...' : '🔍 تحليل النص'}
+                        {loading ? '⏳ جاري التحليل...' : (importMethod === 'manual' ? '🔍 تحليل النص' : '🔍 تحليل الملف من Drive')}
                     </button>
                 </div>
             )}
@@ -239,13 +290,25 @@ export default function QuestionImportPage() {
                                         <div className="flex-1 min-w-0">
                                             <div className="flex items-center gap-2 flex-wrap mb-1">
                                                 <span className="text-xs text-gray-400">#{q.index + 1}</span>
+                                                <span className="text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-semibold uppercase">{q.type || 'true_false'}</span>
                                                 {q.isDuplicate && <span className="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-semibold">مكرر</span>}
                                                 {!q.valid && <span className="text-[10px] bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-semibold">{q.error || 'غير صالح'}</span>}
                                             </div>
                                             <p className="text-sm font-semibold text-gray-800" dir="rtl">{q.text}</p>
-                                            {q.answer && (
+
+                                            {q.type === 'mcq' && q.options && q.options.length > 0 && (
+                                                <div className="flex flex-col gap-1 mt-2 mb-2 pr-2 border-r-2 border-gray-100">
+                                                    {q.options.map((opt, i) => (
+                                                        <div key={i} className="text-xs text-gray-600">
+                                                            • {opt}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+
+                                            {(q.answer || q.correctAnswer) && (
                                                 <p className="text-xs text-green-700 bg-green-50 rounded-lg px-2 py-1 mt-1 inline-block" dir="rtl">
-                                                    ✓ {q.answer}
+                                                    ✓ {q.correctAnswer || q.answer}
                                                 </p>
                                             )}
                                         </div>

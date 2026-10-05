@@ -7,6 +7,7 @@ import User from '@/lib/db/models/User';
 import { withStudent } from '@/lib/auth/middleware';
 import { JWTPayload } from '@/lib/auth/jwt';
 import { awardPoints } from '@/lib/gamification/engine';
+import { checkAndAwardAchievements } from '@/lib/utils/achievements';
 import mongoose from 'mongoose';
 
 // POST /api/student/exams/submit - submit exam answers
@@ -142,6 +143,8 @@ async function postHandler(req: NextRequest, _ctx: unknown, student: JWTPayload)
             });
 
             await ExamAttempt.findByIdAndUpdate(attempt._id, { pointsAwarded: true });
+            // Fire achievement check (non-blocking)
+            checkAndAwardAchievements(student.userId).catch(() => { });
         }
     }
 

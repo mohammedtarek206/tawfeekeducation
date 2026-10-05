@@ -5,6 +5,10 @@ import LessonProgress from '@/lib/db/models/LessonProgress';
 import ExamAttempt from '@/lib/db/models/ExamAttempt';
 import User from '@/lib/db/models/User';
 import Notification from '@/lib/db/models/Notification';
+import Task from '@/lib/db/models/Task';
+import StudentTask from '@/lib/db/models/StudentTask';
+import Achievement from '@/lib/db/models/Achievement';
+import StudentAchievement from '@/lib/db/models/StudentAchievement';
 import { withStudent } from '@/lib/auth/middleware';
 import { JWTPayload } from '@/lib/auth/jwt';
 
@@ -37,9 +41,7 @@ async function handler(req: NextRequest, _ctx: unknown, student: JWTPayload): Pr
     });
 
     // Get last watched lesson
-    const lastProgress = await LessonProgress.findOne({
-        student: student.userId,
-    })
+    const lastProgress = await LessonProgress.findOne({ student: student.userId })
         .sort({ updatedAt: -1 })
         .populate('lesson', 'title unit lessonNumber thumbnail youtubeId duration grade');
 
@@ -89,6 +91,52 @@ async function handler(req: NextRequest, _ctx: unknown, student: JWTPayload): Pr
         .limit(5)
         .lean();
 
+    // ---- TASKS SUMMARY ----
+    const audienceQuery = {
+        $or: [
+            { targetAudience: 'all' },
+            { targetAudience: 'grade', grade: studentUser.grade },
+            { targetAudience: 'subject' },
+            { targetAudience: 'specific_students', specificStudents: student.userId },
+        ]
+    };
+    const allTasks = await Task.find({ isPublished: true, ...audienceQuery })
+        .sort({ endDate: 1, createdAt: -1 })
+        .limit(5)
+        .lean() as any[];
+
+    const taskCompletions = await StudentTask.find({ student: student.userId }).select('task').lean() as any[];
+    const completedTaskIds = new Set(taskCompletions.map((c: any) => c.task.toString()));
+
+    const tasksWithStatus = allTasks.map((t: any) => {
+        let status: string = 'new';
+        if (completedTaskIds.has(t._id.toString())) status = 'completed';
+        else if (t.endDate && new Date(t.endDate) < now) status = 'overdue';
+        return { ...t, status, isCompleted: completedTaskIds.has(t._id.toString()) };
+    });
+
+    const taskSummary = {
+        total: allTasks.length,
+        new: tasksWithStatus.filter(t => t.status === 'new').length,
+        completed: tasksWithStatus.filter(t => t.status === 'completed').length,
+        overdue: tasksWithStatus.filter(t => t.status === 'overdue').length,
+        latest: tasksWithStatus.slice(0, 3),
+    };
+
+    // ---- ACHIEVEMENTS SUMMARY ----
+    const earnedAchievements = await StudentAchievement.find({ student: student.userId })
+        .populate('achievement', 'title icon badgeColor pointsReward')
+        .sort({ earnedAt: -1 })
+        .limit(4)
+        .lean() as any[];
+
+    const totalAchievementsCount = await Achievement.countDocuments({ isPublished: true });
+    const achievementSummary = {
+        totalAvailable: totalAchievementsCount,
+        earned: earnedAchievements.length,
+        latest: earnedAchievements.map((e: any) => e.achievement).filter(Boolean),
+    };
+
     return NextResponse.json({
         success: true,
         data: {
@@ -113,6 +161,8 @@ async function handler(req: NextRequest, _ctx: unknown, student: JWTPayload): Pr
             upcomingExams,
             notifications,
             unreadNotifications,
+            taskSummary,
+            achievementSummary,
         },
     });
 }

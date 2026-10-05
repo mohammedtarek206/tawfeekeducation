@@ -20,6 +20,11 @@ const EMPTY_FORM = {
     targetType: 'custom',
     targetCount: 1,
     isPublished: true,
+    isMandatory: true,
+    targetAudience: 'grade',
+    specificStudents: '',
+    link: '',
+    endDate: '',
 };
 
 export default function AdminTasksPage() {
@@ -101,6 +106,11 @@ export default function AdminTasksPage() {
             targetType: task.targetType || 'custom',
             targetCount: task.targetCount || 1,
             isPublished: task.isPublished ?? true,
+            isMandatory: task.isMandatory ?? true,
+            targetAudience: task.targetAudience || 'grade',
+            specificStudents: task.specificStudents ? task.specificStudents.join(', ') : '',
+            link: task.link || '',
+            endDate: task.endDate ? new Date(task.endDate).toISOString().slice(0, 10) : '',
         });
         setShowForm(true);
         window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -226,6 +236,54 @@ export default function AdminTasksPage() {
                             </div>
 
                             <div>
+                                <label className="input-label">الجمهور المستهدف</label>
+                                <select
+                                    className="input-field"
+                                    value={form.targetAudience}
+                                    onChange={(e) => setForm({ ...form, targetAudience: e.target.value })}
+                                >
+                                    <option value="all">جميع الطلاب (كافة الصفوف والمواد)</option>
+                                    <option value="grade">حسب الصف الدراسي</option>
+                                    <option value="subject">حسب المادة الدراسية (للمدرسين/المواد)</option>
+                                    <option value="specific_students">طلاب محددين</option>
+                                </select>
+                            </div>
+
+                            {form.targetAudience === 'specific_students' && (
+                                <div className="md:col-span-2">
+                                    <label className="input-label">أرقام هواتف الطلاب أو User IDs (مفصولة بفاصلة)</label>
+                                    <input
+                                        type="text"
+                                        className="input-field"
+                                        placeholder="مثال: 01012345678, 64bcde..."
+                                        value={form.specificStudents}
+                                        onChange={(e) => setForm({ ...form, specificStudents: e.target.value })}
+                                    />
+                                </div>
+                            )}
+
+                            <div>
+                                <label className="input-label">رابط المهمة (اختياري)</label>
+                                <input
+                                    type="url"
+                                    className="input-field"
+                                    placeholder="مثال: https://docs.google.com/forms..."
+                                    value={form.link}
+                                    onChange={(e) => setForm({ ...form, link: e.target.value })}
+                                />
+                            </div>
+
+                            <div>
+                                <label className="input-label">الموعد النهائي</label>
+                                <input
+                                    type="date"
+                                    className="input-field"
+                                    value={form.endDate}
+                                    onChange={(e) => setForm({ ...form, endDate: e.target.value })}
+                                />
+                            </div>
+
+                            <div>
                                 <label className="input-label">النقاط المكتسبة</label>
                                 <input
                                     type="number"
@@ -257,8 +315,8 @@ export default function AdminTasksPage() {
                                 />
                             </div>
 
-                            <div className="md:col-span-2 mt-2">
-                                <label className="flex items-center gap-3 cursor-pointer p-3 bg-gray-50 rounded-xl border border-gray-100 hover:border-tawfeek-green/50 transition-colors">
+                            <div className="md:col-span-2 mt-2 flex flex-col sm:flex-row gap-4">
+                                <label className="flex-1 flex items-center gap-3 cursor-pointer p-3 bg-gray-50 rounded-xl border border-gray-100 hover:border-tawfeek-green/50 transition-colors">
                                     <input
                                         type="checkbox"
                                         checked={form.isPublished}
@@ -266,6 +324,15 @@ export default function AdminTasksPage() {
                                         className="w-5 h-5 text-forest border-gray-300 rounded focus:ring-forest"
                                     />
                                     <span className="font-bold text-gray-700">مهمة نشطة (تظهر للطلاب)</span>
+                                </label>
+                                <label className="flex-1 flex items-center gap-3 cursor-pointer p-3 bg-gray-50 rounded-xl border border-gray-100 hover:border-tawfeek-green/50 transition-colors">
+                                    <input
+                                        type="checkbox"
+                                        checked={form.isMandatory}
+                                        onChange={(e) => setForm({ ...form, isMandatory: e.target.checked })}
+                                        className="w-5 h-5 text-forest border-gray-300 rounded focus:ring-forest"
+                                    />
+                                    <span className="font-bold text-gray-700">مهمة إجبارية الأساسية</span>
                                 </label>
                             </div>
                         </div>

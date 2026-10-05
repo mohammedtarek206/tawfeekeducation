@@ -9,7 +9,31 @@ async function putHandler(req: NextRequest, ctx: unknown): Promise<NextResponse>
     const { id } = params;
     const body = await req.json();
 
-    const updated = await Task.findByIdAndUpdate(id, body, { new: true });
+    let updateBody = { ...body };
+
+    if (updateBody.targetAudience === 'specific_students' && typeof updateBody.specificStudents === 'string') {
+        const { default: mongoose } = await import('mongoose');
+        const items = updateBody.specificStudents.split(',').map((s: string) => s.trim()).filter(Boolean);
+        const phones = items.filter((s: string) => /^01[0-9]{9}$/.test(s));
+        const customIds = items.filter((s: string) => mongoose.Types.ObjectId.isValid(s));
+
+        let specificStudentIds: mongoose.Types.ObjectId[] = [];
+        if (phones.length > 0 || customIds.length > 0) {
+            const { default: User } = await import('@/lib/db/models/User');
+            const users = await User.find({
+                $or: [
+                    { phone: { $in: phones } },
+                    { _id: { $in: customIds } }
+                ]
+            }).select('_id');
+            specificStudentIds = users.map(u => u._id);
+        }
+        updateBody.specificStudents = specificStudentIds;
+    } else if (updateBody.targetAudience !== 'specific_students') {
+        updateBody.specificStudents = [];
+    }
+
+    const updated = await Task.findByIdAndUpdate(id, updateBody, { new: true });
     if (!updated) {
         return NextResponse.json({ success: false, message: 'المهمة غير موجودة' }, { status: 404 });
     }

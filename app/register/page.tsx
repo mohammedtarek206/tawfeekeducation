@@ -3,8 +3,8 @@
 import { useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
+import clsx from 'clsx';
 import { ACTIVE_GRADES } from '@/lib/constants/grades';
-
 
 const GOVERNORATES = [
     'القاهرة', 'الجيزة', 'الإسكندرية', 'الدقهلية', 'الشرقية',
@@ -15,12 +15,15 @@ const GOVERNORATES = [
     'مطروح', 'البحر الأحمر',
 ];
 
+type RegisterRole = 'student' | 'parent';
+
 function RegisterForm() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const planId = searchParams.get('planId');
     const callbackUrl = searchParams.get('callbackUrl');
 
+    const [role, setRole] = useState<RegisterRole>('student');
     const [step, setStep] = useState(1);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
@@ -65,28 +68,46 @@ function RegisterForm() {
         setStep(2);
     };
 
-    const handleSubmit = async (e: React.FormEvent) => {
+    const handleSubmitStudent = async (e: React.FormEvent) => {
         e.preventDefault();
         const err = validateStep2();
         if (err) { setError(err); return; }
+        await submitRegistration('student');
+    };
 
+    const handleSubmitParent = async (e: React.FormEvent) => {
+        e.preventDefault();
+        const err = validateStep1();
+        if (err) { setError(err); return; }
+        await submitRegistration('parent');
+    };
+
+    const submitRegistration = async (submittingRole: string) => {
         setLoading(true);
         setError('');
 
         try {
+            const body = submittingRole === 'student' ? {
+                name: form.name,
+                phone: form.phone,
+                password: form.password,
+                role: 'student',
+                parentName: form.parentName,
+                parentPhone: form.parentPhone,
+                grade: form.grade,
+                governorate: form.governorate,
+                referralCode: form.referralCode || undefined,
+            } : {
+                name: form.name,
+                phone: form.phone,
+                password: form.password,
+                role: 'parent',
+            };
+
             const res = await fetch('/api/auth/register', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    name: form.name,
-                    phone: form.phone,
-                    password: form.password,
-                    parentName: form.parentName,
-                    parentPhone: form.parentPhone,
-                    grade: form.grade,
-                    governorate: form.governorate,
-                    referralCode: form.referralCode || undefined,
-                }),
+                body: JSON.stringify(body),
             });
 
             const data = await res.json();
@@ -95,9 +116,12 @@ function RegisterForm() {
                 return;
             }
 
-
-            const pendingUrl = planId ? `/pending?planId=${planId}` : '/pending';
-            router.push(pendingUrl);
+            if (submittingRole === 'student') {
+                const pendingUrl = planId ? `/pending?planId=${planId}` : '/pending';
+                router.push(pendingUrl);
+            } else {
+                router.push('/login');
+            }
         } catch {
             setError('حدث خطأ في الاتصال');
         } finally {
@@ -130,37 +154,194 @@ function RegisterForm() {
                     <p className="text-muted font-medium mt-1 text-sm">انضم لمنصة التوفيق وابدأ رحلتك</p>
                 </div>
 
-                {/* Steps */}
-                <div className="flex items-center justify-center gap-4 mb-6">
-                    {[1, 2].map((s) => (
-                        <div key={s} className="flex items-center gap-2">
-                            <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm
-                ${step >= s ? 'bg-forest text-white shadow-md' : 'bg-earth/30 text-[#7A8C85]'}`}>
-                                {s}
-                            </div>
-                            <span className={`font-bold text-sm ${step >= s ? 'text-forest' : 'text-[#7A8C85]'}`}>
-                                {s === 1 ? 'بياناتك' : 'بيانات إضافية'}
-                            </span>
-                            {s < 2 && <div className={`w-8 h-px ${step > s ? 'bg-forest' : 'bg-earth/40'}`} />}
-                        </div>
-                    ))}
-                </div>
-
                 {/* Card */}
                 <div className="bg-white/80 backdrop-blur-xl rounded-3xl shadow-forest border border-earth/40 p-8">
+
+                    <h2 className="text-xl font-bold text-darktext mb-4 text-center">أنا:</h2>
+
+                    {/* Role Selection Tabs */}
+                    <div className="flex bg-earth/20 p-1 rounded-xl mb-6">
+                        <button
+                            type="button"
+                            onClick={() => { setRole('student'); setStep(1); setError(''); }}
+                            className={clsx(
+                                "flex-1 py-2 text-sm font-bold rounded-lg transition-all",
+                                role === 'student' ? "bg-white text-forest shadow-sm" : "text-darktext/60 hover:text-darktext"
+                            )}
+                        >
+                            طالب
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => { setRole('parent'); setStep(1); setError(''); }}
+                            className={clsx(
+                                "flex-1 py-2 text-sm font-bold rounded-lg transition-all",
+                                role === 'parent' ? "bg-white text-forest shadow-sm" : "text-darktext/60 hover:text-darktext"
+                            )}
+                        >
+                            ولي أمر
+                        </button>
+                    </div>
+
+                    {role === 'student' && (
+                        <div className="flex items-center justify-center gap-4 mb-6">
+                            {[1, 2].map((s) => (
+                                <div key={s} className="flex items-center gap-2">
+                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm
+                        ${step >= s ? 'bg-forest text-white shadow-md' : 'bg-earth/30 text-[#7A8C85]'}`}>
+                                        {s}
+                                    </div>
+                                    <span className={`font-bold text-sm ${step >= s ? 'text-forest' : 'text-[#7A8C85]'}`}>
+                                        {s === 1 ? 'بياناتك' : 'بيانات إضافية'}
+                                    </span>
+                                    {s < 2 && <div className={`w-8 h-px ${step > s ? 'bg-forest' : 'bg-earth/40'}`} />}
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
                     {error && (
                         <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 mb-5 text-sm text-center">
                             {error}
                         </div>
                     )}
 
-                    {step === 1 ? (
-                        <div className="space-y-5">
+                    {role === 'student' ? (
+                        <>
+                            {step === 1 ? (
+                                <div className="space-y-5">
+                                    <div>
+                                        <label className="input-label">الاسم بالكامل</label>
+                                        <input
+                                            type="text"
+                                            placeholder="محمد أحمد إبراهيم"
+                                            value={form.name}
+                                            onChange={(e) => handleChange('name', e.target.value)}
+                                            className="input-field"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="input-label">رقم الهاتف</label>
+                                        <input
+                                            type="tel"
+                                            inputMode="numeric"
+                                            placeholder="01xxxxxxxxx"
+                                            value={form.phone}
+                                            onChange={(e) => handleChange('phone', e.target.value)}
+                                            className="input-field"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="input-label">كلمة المرور</label>
+                                        <input
+                                            type="password"
+                                            placeholder="8 أحرف على الأقل"
+                                            value={form.password}
+                                            onChange={(e) => handleChange('password', e.target.value)}
+                                            className="input-field"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="input-label">تأكيد كلمة المرور</label>
+                                        <input
+                                            type="password"
+                                            placeholder="••••••••"
+                                            value={form.confirmPassword}
+                                            onChange={(e) => handleChange('confirmPassword', e.target.value)}
+                                            className="input-field"
+                                        />
+                                    </div>
+                                    <button onClick={handleNext} className="btn-primary w-full">
+                                        التالي ←
+                                    </button>
+                                </div>
+                            ) : (
+                                <form onSubmit={handleSubmitStudent} className="space-y-5">
+                                    <div>
+                                        <label className="input-label">اسم ولي الأمر</label>
+                                        <input
+                                            type="text"
+                                            placeholder="اسم الوالد أو الوالدة"
+                                            value={form.parentName}
+                                            onChange={(e) => handleChange('parentName', e.target.value)}
+                                            className="input-field"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="input-label">رقم هاتف ولي الأمر</label>
+                                        <input
+                                            type="tel"
+                                            inputMode="numeric"
+                                            placeholder="01xxxxxxxxx"
+                                            value={form.parentPhone}
+                                            onChange={(e) => handleChange('parentPhone', e.target.value)}
+                                            className="input-field"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="input-label">الصف الدراسي</label>
+                                        <select
+                                            value={form.grade}
+                                            onChange={(e) => handleChange('grade', e.target.value)}
+                                            className="input-field"
+                                        >
+                                            <option value="">اختر الصف</option>
+                                            {ACTIVE_GRADES.map((g) => (
+                                                <option key={g.value} value={g.value}>{g.label}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="input-label">المحافظة</label>
+                                        <select
+                                            value={form.governorate}
+                                            onChange={(e) => handleChange('governorate', e.target.value)}
+                                            className="input-field"
+                                        >
+                                            <option value="">اختر المحافظة</option>
+                                            {GOVERNORATES.map((g) => (
+                                                <option key={g} value={g}>{g}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="input-label">
+                                            كود الدعوة <span className="text-gray-400 font-normal">(اختياري)</span>
+                                        </label>
+                                        <input
+                                            type="text"
+                                            placeholder="TAWFEEK-XXXXX"
+                                            value={form.referralCode}
+                                            onChange={(e) => handleChange('referralCode', e.target.value.toUpperCase())}
+                                            className="input-field"
+                                        />
+                                    </div>
+                                    <div className="flex gap-3">
+                                        <button
+                                            type="button"
+                                            onClick={() => setStep(1)}
+                                            className="btn-secondary flex-1"
+                                        >
+                                            → رجوع
+                                        </button>
+                                        <button
+                                            type="submit"
+                                            disabled={loading}
+                                            className="btn-primary flex-1"
+                                        >
+                                            {loading ? 'جاري التسجيل...' : 'سجل الآن'}
+                                        </button>
+                                    </div>
+                                </form>
+                            )}
+                        </>
+                    ) : (
+                        <form onSubmit={handleSubmitParent} className="space-y-5">
                             <div>
                                 <label className="input-label">الاسم بالكامل</label>
                                 <input
                                     type="text"
-                                    placeholder="محمد أحمد إبراهيم"
+                                    placeholder="اسم ولي الأمر"
                                     value={form.name}
                                     onChange={(e) => handleChange('name', e.target.value)}
                                     className="input-field"
@@ -197,87 +378,13 @@ function RegisterForm() {
                                     className="input-field"
                                 />
                             </div>
-                            <button onClick={handleNext} className="btn-primary w-full">
-                                التالي ←
+                            <button
+                                type="submit"
+                                disabled={loading}
+                                className="btn-primary w-full"
+                            >
+                                {loading ? 'جاري التسجيل...' : 'إنشاء حساب'}
                             </button>
-                        </div>
-                    ) : (
-                        <form onSubmit={handleSubmit} className="space-y-5">
-                            <div>
-                                <label className="input-label">اسم ولي الأمر</label>
-                                <input
-                                    type="text"
-                                    placeholder="اسم الوالد أو الوالدة"
-                                    value={form.parentName}
-                                    onChange={(e) => handleChange('parentName', e.target.value)}
-                                    className="input-field"
-                                />
-                            </div>
-                            <div>
-                                <label className="input-label">رقم هاتف ولي الأمر</label>
-                                <input
-                                    type="tel"
-                                    inputMode="numeric"
-                                    placeholder="01xxxxxxxxx"
-                                    value={form.parentPhone}
-                                    onChange={(e) => handleChange('parentPhone', e.target.value)}
-                                    className="input-field"
-                                />
-                            </div>
-                            <div>
-                                <label className="input-label">الصف الدراسي</label>
-                                <select
-                                    value={form.grade}
-                                    onChange={(e) => handleChange('grade', e.target.value)}
-                                    className="input-field"
-                                >
-                                    <option value="">اختر الصف</option>
-                                    {ACTIVE_GRADES.map((g) => (
-                                        <option key={g.value} value={g.value}>{g.label}</option>
-                                    ))}
-                                </select>
-                            </div>
-                            <div>
-                                <label className="input-label">المحافظة</label>
-                                <select
-                                    value={form.governorate}
-                                    onChange={(e) => handleChange('governorate', e.target.value)}
-                                    className="input-field"
-                                >
-                                    <option value="">اختر المحافظة</option>
-                                    {GOVERNORATES.map((g) => (
-                                        <option key={g} value={g}>{g}</option>
-                                    ))}
-                                </select>
-                            </div>
-                            <div>
-                                <label className="input-label">
-                                    كود الدعوة <span className="text-gray-400 font-normal">(اختياري)</span>
-                                </label>
-                                <input
-                                    type="text"
-                                    placeholder="TAWFEEK-XXXXX"
-                                    value={form.referralCode}
-                                    onChange={(e) => handleChange('referralCode', e.target.value.toUpperCase())}
-                                    className="input-field"
-                                />
-                            </div>
-                            <div className="flex gap-3">
-                                <button
-                                    type="button"
-                                    onClick={() => setStep(1)}
-                                    className="btn-secondary flex-1"
-                                >
-                                    → رجوع
-                                </button>
-                                <button
-                                    type="submit"
-                                    disabled={loading}
-                                    className="btn-primary flex-1"
-                                >
-                                    {loading ? 'جاري التسجيل...' : 'سجل الآن'}
-                                </button>
-                            </div>
                         </form>
                     )}
 

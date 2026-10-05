@@ -176,24 +176,56 @@ async function importHandler(req: NextRequest, _ctx: unknown, admin: JWTPayload)
     if (!subject) return NextResponse.json({ success: false, message: 'يرجى تحديد المادة' }, { status: 400 });
 
     const toInsert = questions
-        .filter((q: { text: string; answer: string; skip?: boolean }) => !q.skip && q.text && q.answer)
-        .map((q: { text: string; answer: string }) => ({
-            text: q.text.trim(),
-            type: 'true_false' as const,
-            choices: [
-                { text: q.answer.trim(), isCorrect: true },
-                { text: 'إجابة خاطئة', isCorrect: false },
-            ],
-            difficulty: difficulty || 'medium',
-            subject,
-            grade,
-            isActive: true,
-            usageCount: 0,
-            order: 0,
-            points: 1,
-            tags: [],
-            createdBy: admin.userId,
-        }));
+        .filter((q: any) => !q.skip && q.text)
+        .map((q: any) => {
+            let parsedChoices = [];
+            let qType = q.type || 'true_false';
+
+            if (q.type === 'mcq' && Array.isArray(q.options) && q.options.length > 0) {
+                // Determine correctAnswer
+                const correctAnswer = q.correctAnswer || q.answer || '';
+                parsedChoices = q.options.map((opt: string) => ({
+                    text: opt.trim(),
+                    isCorrect: opt.trim() === correctAnswer.trim()
+                }));
+                // Fallback if no correct option found
+                if (!parsedChoices.some((c: any) => c.isCorrect) && parsedChoices.length > 0) {
+                    parsedChoices[0].isCorrect = true;
+                }
+            } else if (q.type === 'true_false') {
+                const isCorrect = q.correctAnswer === 'صح' || q.correctAnswer === 'True' || q.correctAnswer === 'true' || q.answer === 'صح';
+                parsedChoices = [
+                    { text: 'صح', isCorrect: isCorrect },
+                    { text: 'خطأ', isCorrect: !isCorrect }
+                ];
+            } else if (q.type === 'short_answer' || q.type === 'essay') {
+                parsedChoices = [
+                    { text: (q.correctAnswer || q.answer).trim(), isCorrect: true }
+                ];
+            } else {
+                // Fallback for manual (old) parser
+                parsedChoices = [
+                    { text: q.answer ? q.answer.trim() : 'الإجابة', isCorrect: true },
+                    { text: 'إجابة خاطئة', isCorrect: false },
+                ];
+                qType = 'true_false';
+            }
+
+            return {
+                text: q.text.trim(),
+                type: qType,
+                choices: parsedChoices,
+                difficulty: difficulty || 'medium',
+                subject,
+                grade,
+                isActive: true,
+                usageCount: 0,
+                order: 0,
+                points: q.points || 1,
+                tags: [],
+                createdBy: admin.userId,
+            };
+        });
 
     if (!toInsert.length) {
         return NextResponse.json({ success: false, message: 'لا توجد أسئلة صالحة بعد الفلترة' }, { status: 400 });
