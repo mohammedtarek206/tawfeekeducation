@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { gradeLabel, GRADES } from '@/lib/constants/grades';
+import { gradeLabel, ACTIVE_GRADES } from '@/lib/constants/grades';
 import { formatDate } from '@/lib/utils/helpers';
 
 
@@ -106,7 +106,7 @@ export default function AdminFreeStudentsPage() {
                         className="input-field text-sm font-bold bg-white"
                     >
                         <option value="">جميع الصفوف الدراسية</option>
-                        {GRADES.map((g: any) => (
+                        {ACTIVE_GRADES.map((g: any) => (
                             <option key={g.value} value={g.value}>{g.label}</option>
                         ))}
                     </select>

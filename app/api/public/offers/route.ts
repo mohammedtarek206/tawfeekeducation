@@ -1,22 +1,19 @@
 import { NextResponse } from 'next/server';
-import { getFreeOfferStats, getFreeOfferSettings } from '@/lib/settings/freeOffer';
+import { getFreeOfferStats } from '@/lib/settings/freeOffer';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 /**
  * GET /api/public/offers
- * يُرجع العروض النشطة فقط — بيانات آمنة للعرض العام
+ * Returns public-safe offer data only — no admin/sensitive fields.
  */
 export async function GET() {
     try {
-        const [stats, settings] = await Promise.all([
-            getFreeOfferStats(),
-            getFreeOfferSettings(),
-        ]);
+        const stats = await getFreeOfferStats();
 
-        // إذا كان العرض معطلاً من الأدمن لا نعرضه
-        if (!settings.freeOfferEnabled) {
+        // Offer is disabled or not started or expired — return empty
+        if (stats.offerStatus === 'DISABLED') {
             return NextResponse.json({ success: true, offers: [] });
         }
 
@@ -24,21 +21,26 @@ export async function GET() {
         const maximum = stats.freeStudentsLimit;
         const remaining = Math.max(0, maximum - claimed);
         const percentage = maximum > 0 ? Math.min(100, Math.round((claimed / maximum) * 100)) : 0;
-        const isFull = claimed >= maximum;
+        const isFull = stats.offerStatus === 'FULL';
+        const s = stats.settings;
 
         const offer = {
             id: 'free-students-offer',
             type: 'FREE_FIRST_N' as const,
-            title: settings.freeOfferTitle,
-            description: settings.freeOfferDescription,
+            title: s.freeOfferTitle,
+            description: s.freeOfferDescription,
             maximumStudents: maximum,
             claimedStudents: claimed,
             remainingStudents: remaining,
             percentage,
             isFull,
-            isActive: !isFull,
-            durationInDays: settings.freeOfferDuration,
-            cta: isFull ? 'اكتمل العرض' : 'احجز مكانك الآن',
+            isActive: stats.isOfferActive,
+            offerStatus: stats.offerStatus,
+            durationInDays: s.freeOfferDuration,
+            cta: s.freeOfferCtaText,
+            startDate: s.freeOfferStartDate?.toISOString() ?? null,
+            endDate: s.freeOfferEndDate?.toISOString() ?? null,
+            eligibleGrades: s.freeOfferEligibleGrades,
         };
 
         return NextResponse.json({ success: true, offers: [offer] });

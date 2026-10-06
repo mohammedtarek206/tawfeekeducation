@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { ACTIVE_GRADES } from '@/lib/constants/grades';
 
 export default function AdminSettingsPage() {
     const [settings, setSettings] = useState<Record<string, any>>({});
@@ -54,6 +55,12 @@ export default function AdminSettingsPage() {
                 setError('الحد الأقصى للطلاب المجانيين يجب أن يكون عدداً صحيحاً أكبر من أو يساوي 1');
                 return;
             }
+            // Warn if new limit < current claimed
+            if (stats && val < stats.freeSlotsFilled) {
+                if (!confirm(`⚠️ تنبيه: العدد الجديد (${val}) أقل من الطلاب المستفيدين حالياً (${stats.freeSlotsFilled}). لن يتم إلغاء اشتراكاتهم، لكن لن يُمنح العرض لطلاب جدد حتى انخفاض العدد. هل تريد المتابعة؟`)) {
+                    return;
+                }
+            }
         }
 
         setSaving(true);
@@ -65,6 +72,9 @@ export default function AdminSettingsPage() {
                 let parsedVal = value;
                 if (key === 'free_offer_enabled') {
                     parsedVal = Boolean(value);
+                } else if (key === 'free_offer_eligible_grades') {
+                    // keep as array
+                    parsedVal = value;
                 } else if (typeof value === 'string' && !isNaN(Number(value)) && value.trim() !== '') {
                     parsedVal = Number(value);
                 }
@@ -243,6 +253,99 @@ export default function AdminSettingsPage() {
                                 </div>
                             </div>
 
+                            {/* Offer Description */}
+                            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 p-4 rounded-2xl border border-gray-100 bg-white">
+                                <div>
+                                    <div className="font-bold text-gray-900 text-base">وصف العرض المجاني</div>
+                                    <div className="text-sm text-gray-500 mt-1">النص التوضيحي الظاهر أسفل عنوان العرض</div>
+                                </div>
+                                <div className="sm:w-80">
+                                    <textarea
+                                        rows={2}
+                                        value={getValue('free_offer_description', 'اشتراك شامل لجميع الدروس والامتحانات والمراجعات')}
+                                        onChange={e => handleChange('free_offer_description', e.target.value)}
+                                        className="input-field font-bold text-sm resize-none"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* CTA Text */}
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-2xl border border-gray-100 bg-white">
+                                <div>
+                                    <div className="font-bold text-gray-900 text-base">نص زر العرض (CTA)</div>
+                                    <div className="text-sm text-gray-500 mt-1">النص الظاهر على زر الاشتراك بالعرض المجاني</div>
+                                </div>
+                                <div className="sm:w-80">
+                                    <input
+                                        type="text"
+                                        value={getValue('free_offer_cta_text', 'احجز مكانك الآن مجانًا')}
+                                        onChange={e => handleChange('free_offer_cta_text', e.target.value)}
+                                        className="input-field font-bold text-sm"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Start / End dates */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="flex flex-col gap-2 p-4 rounded-2xl border border-gray-100 bg-white">
+                                    <div className="font-bold text-gray-900 text-sm">تاريخ بداية العرض (اختياري)</div>
+                                    <div className="text-xs text-gray-500">اتركه فارغًا ليبدأ العرض فورًا</div>
+                                    <input
+                                        type="date"
+                                        value={getValue('free_offer_start_date', '')}
+                                        onChange={e => handleChange('free_offer_start_date', e.target.value)}
+                                        className="input-field text-sm"
+                                    />
+                                </div>
+                                <div className="flex flex-col gap-2 p-4 rounded-2xl border border-gray-100 bg-white">
+                                    <div className="font-bold text-gray-900 text-sm">تاريخ نهاية العرض (اختياري)</div>
+                                    <div className="text-xs text-gray-500">اتركه فارغًا ليظل العرض مفتوحًا</div>
+                                    <input
+                                        type="date"
+                                        value={getValue('free_offer_end_date', '')}
+                                        onChange={e => handleChange('free_offer_end_date', e.target.value)}
+                                        className="input-field text-sm"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Eligible Grades */}
+                            <div className="p-4 rounded-2xl border border-gray-100 bg-white">
+                                <div className="font-bold text-gray-900 text-base mb-1">الصفوف المؤهلة للعرض</div>
+                                <div className="text-sm text-gray-500 mb-3">اترك الكل غير محدد ليُتاح العرض لجميع الصفوف</div>
+                                <div className="flex flex-wrap gap-3">
+                                    {ACTIVE_GRADES.map((g) => {
+                                        const current: string[] = getValue('free_offer_eligible_grades', []) as string[];
+                                        const isChecked = Array.isArray(current) && current.includes(g.value);
+                                        return (
+                                            <label key={g.value} className="flex items-center gap-2 cursor-pointer p-3 rounded-xl border border-gray-200 hover:border-forest/40 transition-colors">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={isChecked}
+                                                    onChange={e => {
+                                                        const prev: string[] = Array.isArray(current) ? [...current] : [];
+                                                        if (e.target.checked) {
+                                                            handleChange('free_offer_eligible_grades', [...prev, g.value]);
+                                                        } else {
+                                                            handleChange('free_offer_eligible_grades', prev.filter((v: string) => v !== g.value));
+                                                        }
+                                                    }}
+                                                    className="w-4 h-4 accent-forest"
+                                                />
+                                                <span className="text-sm font-bold text-gray-700">{g.label}</span>
+                                            </label>
+                                        );
+                                    })}
+                                </div>
+                                <div className="text-xs text-gray-400 mt-2">
+                                    {(() => {
+                                        const sel: string[] = getValue('free_offer_eligible_grades', []) as string[];
+                                        return !Array.isArray(sel) || sel.length === 0
+                                            ? '✅ جميع الصفوف مؤهلة'
+                                            : `✅ الصفوف المحددة: ${sel.join(', ')}`;
+                                    })()}
+                                </div>
+                            </div>
                             {/* Offer Duration */}
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-2xl border border-gray-100 bg-white">
                                 <div>
@@ -306,24 +409,27 @@ export default function AdminSettingsPage() {
                         </div>
                     </div>
                 </>
-            )}
+            )
+            }
 
             {/* Save Button Bar */}
-            {Object.keys(dirty).length > 0 && (
-                <div className="fixed bottom-6 left-6 right-6 md:left-12 md:right-72 bg-forest text-white p-4 rounded-2xl shadow-2xl flex justify-between items-center z-50 animate-bounce">
-                    <div className="font-bold text-sm">
-                        ⚠️ يوجد ({Object.keys(dirty).length}) تغييرات غير محفوظة!
+            {
+                Object.keys(dirty).length > 0 && (
+                    <div className="fixed bottom-6 left-6 right-6 md:left-12 md:right-72 bg-forest text-white p-4 rounded-2xl shadow-2xl flex justify-between items-center z-50 animate-bounce">
+                        <div className="font-bold text-sm">
+                            ⚠️ يوجد ({Object.keys(dirty).length}) تغييرات غير محفوظة!
+                        </div>
+                        <button
+                            onClick={handleSave}
+                            disabled={saving}
+                            className="px-6 py-2.5 bg-tawfeek-green hover:bg-emerald-600 text-white font-bold rounded-xl text-sm transition-colors"
+                        >
+                            {saving ? 'جاري الحفظ...' : 'حفظ التغييرات الآن'}
+                        </button>
                     </div>
-                    <button
-                        onClick={handleSave}
-                        disabled={saving}
-                        className="px-6 py-2.5 bg-tawfeek-green hover:bg-emerald-600 text-white font-bold rounded-xl text-sm transition-colors"
-                    >
-                        {saving ? 'جاري الحفظ...' : 'حفظ التغييرات الآن'}
-                    </button>
-                </div>
-            )}
-        </div>
+                )
+            }
+        </div >
     );
 }
 

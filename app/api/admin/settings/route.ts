@@ -42,17 +42,23 @@ async function patchHandler(req: NextRequest, _ctx: unknown, admin: JWTPayload):
         metadata: { updatedKeys: updates.map((u: { key: string }) => u.key) },
     });
 
-    // تحديث الصفحة الرئيسية تلقائياً بعد تغيير إعدادات العروض
+    // تحديث الصفحات العامة تلقائياً بعد تغيير إعدادات العروض
     const offerKeys = [
         'free_offer_enabled', 'freeOfferEnabled',
         'free_student_limit', 'freeStudentsLimit',
         'free_offer_title', 'freeOfferTitle',
         'free_offer_description', 'freeOfferDescription',
         'free_offer_duration', 'freeOfferDuration',
+        'free_offer_cta_text',
+        'free_offer_start_date',
+        'free_offer_end_date',
+        'free_offer_eligible_grades',
     ];
     const hasOfferChange = updates.some((u: { key: string }) => offerKeys.includes(u.key));
     if (hasOfferChange) {
         revalidatePath('/');
+        revalidatePath('/login');
+        revalidatePath('/register');
     }
 
     return NextResponse.json({ success: true, message: 'تم حفظ الإعدادات' });

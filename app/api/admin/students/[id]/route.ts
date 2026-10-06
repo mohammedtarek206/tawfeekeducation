@@ -56,7 +56,7 @@ async function handler(
                 let freeSlotNumber: number | undefined;
 
                 if (stats.isOfferActive) {
-                    const res = await assignFreeSlotAtomically(studentId);
+                    const res = await assignFreeSlotAtomically(studentId, student.grade);
                     if (res.assigned) {
                         isFreeStudent = true;
                         freeSlotNumber = res.slotNumber;
@@ -78,12 +78,18 @@ async function handler(
                         subscriptionStatus: 'none',
                         rejectionReason: null
                     });
+                } else {
+                    await User.findByIdAndUpdate(studentId, {
+                        status: 'approved',
+                        rejectionReason: null
+                    });
                 }
 
                 newStatus = 'approved';
-                notificationTitle = 'تم قبول طلبك!';
-                notificationMessage =
-                    'تهانينا! تم الموافقة على حسابك في منصة التوفيق. يمكنك الآن الدخول والبدء في التعلم.';
+                notificationTitle = isFreeStudent ? '🎉 تم قبولك في العرض المجاني!' : 'تم قبول طلبك!';
+                notificationMessage = isFreeStudent
+                    ? `تهانينا! تم قبول حسابك وتفعيل العرض المجاني (المقعد رقم #${freeSlotNumber}). يمكنك الآن الوصول لجميع الدروس والامتحانات مجاناً.`
+                    : 'تهانينا! تم الموافقة على حسابك في منصة التوفيق. يمكنك الآن الدخول والبدء في التعلم.';
                 auditAction = AUDIT_ACTIONS.STUDENT_APPROVED;
 
                 // Handle referral rewards

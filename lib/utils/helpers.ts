@@ -1,6 +1,6 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { GRADES } from '@/lib/constants/grades';
+import { gradeLabel as getGradeLabel } from '@/lib/constants/grades';
 
 export function cn(...inputs: ClassValue[]): string {
     return twMerge(clsx(inputs));
@@ -43,8 +43,7 @@ export function formatDuration(minutes: number): string {
 }
 
 export function gradeLabel(grade: string): string {
-    const found = GRADES.find(g => g.value === grade);
-    return found ? found.label : grade;
+    return getGradeLabel(grade);
 }
 
 export function statusLabel(status: string): string {
