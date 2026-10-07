@@ -19,7 +19,7 @@ function timeAgo(dateString: string) {
     return Math.floor(seconds) + ' ثانية';
 }
 
-export default function ParentActivityPage()   {
+export default function ParentActivityPage() {
     const { selectedStudent, loading: contextLoading } = useParentContext();
     const [data, setData] = useState<any>(null);
     const [loading, setLoading] = useState(true);

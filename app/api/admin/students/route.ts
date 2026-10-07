@@ -28,11 +28,12 @@ async function handler(req: NextRequest): Promise<NextResponse> {
 
     const total = await User.countDocuments(filter);
     const students = await User.find(filter)
-        .select('name phone grade governorate status phoneVerified isFreeStudent points level referralCode parentName parentPhone createdAt lastLogin')
+        .select('name phone grade governorate status phoneVerified isFreeStudent subscriptionStatus subscriptionEndDate points level referralCode parentName parentPhone createdAt lastLogin')
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit)
         .lean();
+
 
     return NextResponse.json({
         success: true,

@@ -2,6 +2,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
+import BlockedContentCard from '@/components/shared/BlockedContentCard';
+
 
 export default function ExamTakingPage() {
     const { examId } = useParams();
@@ -16,6 +18,8 @@ export default function ExamTakingPage() {
     const [result, setResult] = useState<any>(null);
     const [timeLeft, setTimeLeft] = useState<number | null>(null);
 
+    const [blockedReason, setBlockedReason] = useState<string | null>(null);
+
     useEffect(() => {
         if (!examId) return;
         fetch(`/api/student/exams/${examId}`)
@@ -25,12 +29,16 @@ export default function ExamTakingPage() {
                     setExam(res.data.exam);
                     setTimeLeft(res.data.exam.duration * 60);
                 } else {
+                    if (res.requireSubscription || res.reason) {
+                        setBlockedReason(res.reason || 'no_subscription');
+                    }
                     setError(res.message || 'الامتحان غير موجود');
                 }
             })
             .catch(() => setError('خطأ في الاتصال'))
             .finally(() => setLoading(false));
     }, [examId]);
+
 
     // Countdown timer
     useEffect(() => {
@@ -77,7 +85,17 @@ export default function ExamTakingPage() {
     };
 
     if (loading) return <div className="animate-pulse h-96 bg-gray-200 rounded-2xl max-w-3xl mx-auto" />;
+
+    if (blockedReason) {
+        return (
+            <div className="max-w-3xl mx-auto pt-6 px-4">
+                <BlockedContentCard reason={blockedReason} message={error} />
+            </div>
+        );
+    }
+
     if (error) return (
+
         <div className="max-w-xl mx-auto text-center py-20">
             <div className="text-5xl mb-4">❌</div>
             <p className="text-gray-600 mb-4">{error}</p>

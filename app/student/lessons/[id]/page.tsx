@@ -1,14 +1,19 @@
 'use client';
+
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
+import VideoPlayer from '@/components/shared/VideoPlayer';
+import BlockedContentCard from '@/components/shared/BlockedContentCard';
 
 export default function LessonDetailsPage() {
     const { id } = useParams();
     const [data, setData] = useState<any>(null);
+    const [studentName, setStudentName] = useState<string>('');
     const [progress, setProgress] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
+    const [blockedReason, setBlockedReason] = useState<string | null>(null);
     const [linkedQuiz, setLinkedQuiz] = useState<any>(null);
 
     useEffect(() => {
@@ -18,16 +23,20 @@ export default function LessonDetailsPage() {
             .then((res) => {
                 if (res.success) {
                     setData(res.data.lesson);
-                    // جلب الكويز المرتبط بهذه الحصة
+                    setStudentName(res.data.studentName || '');
+                    // Fetch linked quiz
                     fetch(`/api/student/exams?type=quiz&lessonId=${id}`)
-                        .then(r => r.json())
-                        .then(qRes => {
+                        .then((r) => r.json())
+                        .then((qRes) => {
                             if (qRes.success && qRes.data?.exams?.length > 0) {
                                 setLinkedQuiz(qRes.data.exams[0]);
                             }
                         })
                         .catch(() => { });
                 } else {
+                    if (res.requireSubscription || res.reason) {
+                        setBlockedReason(res.reason || 'no_subscription');
+                    }
                     setError(res.message || 'الحصة غير موجودة');
                 }
             })
@@ -58,10 +67,25 @@ export default function LessonDetailsPage() {
     };
 
     if (loading) return <div className="animate-pulse h-96 bg-gray-200 rounded-2xl max-w-5xl mx-auto mt-6" />;
-    if (error || !data) return <div className="text-center py-20 font-bold text-red-500">{error || 'عفواً، الحصة غير متاحة.'}</div>;
+
+    if (blockedReason) {
+        return (
+            <div className="max-w-5xl mx-auto pt-6 px-4">
+                <BlockedContentCard reason={blockedReason} message={error} />
+            </div>
+        );
+    }
+
+    if (error || !data) {
+        return (
+            <div className="text-center py-20 font-bold text-rose-500 max-w-5xl mx-auto">
+                {error || 'عفواً، الحصة غير متاحة.'}
+            </div>
+        );
+    }
 
     return (
-        <div className="max-w-5xl mx-auto space-y-6 animate-fadeIn pt-4">
+        <div className="max-w-5xl mx-auto space-y-6 animate-fadeIn pt-4 pb-20">
             <div className="flex items-center gap-4 text-sm text-gray-500">
                 <Link href="/student/lessons" className="hover:text-tawfeek-green transition-colors font-bold">الحصص</Link>
                 <span>/</span>
@@ -79,47 +103,18 @@ export default function LessonDetailsPage() {
                 </div>
             </div>
 
-            {/* Video Player */}
-            <div className="bg-black rounded-2xl overflow-hidden shadow-2xl relative aspect-video border border-gray-800">
-                {data.youtubeId ? (
-                    <iframe
-                        src={`https://www.youtube.com/embed/${data.youtubeId}?rel=0&modestbranding=1`}
-                        title={data.title}
-                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                        allowFullScreen
-                        className="absolute top-0 left-0 w-full h-full border-0"
-                    ></iframe>
-                ) : data.youtubeUrl && data.youtubeUrl.includes('drive.google.com') ? (
-                    <iframe
-                        src={data.youtubeUrl.replace(/\/view.*$/, '/preview')}
-                        title={data.title}
-                        allow="autoplay; encrypted-media"
-                        allowFullScreen
-                        className="absolute top-0 left-0 w-full h-full border-0"
-                    ></iframe>
-                ) : data.youtubeUrl && (data.youtubeUrl.endsWith('.mp4') || data.youtubeUrl.endsWith('.webm')) ? (
-                    <video
-                        src={data.youtubeUrl}
-                        controls
-                        className="absolute top-0 left-0 w-full h-full object-contain"
-                    />
-                ) : data.youtubeUrl ? (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-400">
-                        <a href={data.youtubeUrl} target="_blank" rel="noopener noreferrer" className="btn-primary">
-                            فتح رابط الفيديو الخارجي
-                        </a>
-                    </div>
-                ) : (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-400">
-                        <div className="text-5xl mb-2">🎥</div>
-                        <p>الفيديو غير متوفر</p>
-                    </div>
-                )}
-            </div>
+            {/* Interactive Video Player with Watermark */}
+            <VideoPlayer
+                src={data.videoUrl}
+                youtubeId={data.youtubeId}
+                youtubeUrl={data.youtubeUrl}
+                title={data.title}
+                studentName={studentName}
+            />
 
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col sm:flex-row items-center justify-between gap-4">
                 <div className="text-center sm:text-right">
-                    <h3 className="font-bold text-gray-900 text-lg mb-1">هل أنهيت ومشاهدة الحصة؟</h3>
+                    <h3 className="font-bold text-gray-900 text-lg mb-1">هل أنهيت مشاهدة الحصة؟</h3>
                     <p className="text-sm text-gray-500 max-w-lg">
                         تأكد من استكمال الشرح لضمان تحصيلك الكامل، ستُمنح النقاط بمجرد التأكيد.
                     </p>
@@ -137,7 +132,6 @@ export default function LessonDetailsPage() {
 
             {/* Additional Features Links */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-8">
-                {/* كويز الحصة — إذا كان مرتبطًا يوجه مباشرة للكويز وإلا لقائمة الكويزات */}
                 <Link
                     href={linkedQuiz ? `/student/exams/${linkedQuiz._id}` : `/student/lesson-quizzes`}
                     className="group bg-white border border-gray-100 rounded-xl overflow-hidden hover:border-forest/50 transition-all shadow-sm hover:shadow-md flex items-center p-4 gap-4"
@@ -173,3 +167,4 @@ export default function LessonDetailsPage() {
         </div>
     );
 }
+

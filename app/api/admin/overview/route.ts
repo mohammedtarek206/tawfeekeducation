@@ -28,6 +28,8 @@ async function handler(req: NextRequest): Promise<NextResponse> {
         activeSubscriptionsCount,
         expiredSubscriptionsCount,
         pendingPaymentsCount,
+        approvedPaymentsCount,
+        rejectedPaymentsCount,
         totalLessons,
         publishedLessons,
         totalQuizzes,
@@ -49,6 +51,8 @@ async function handler(req: NextRequest): Promise<NextResponse> {
         User.countDocuments({ role: 'student', subscriptionStatus: 'active' }),
         User.countDocuments({ role: 'student', subscriptionStatus: 'expired' }),
         PaymentRequest.countDocuments({ status: 'pending' }),
+        PaymentRequest.countDocuments({ status: 'approved' }),
+        PaymentRequest.countDocuments({ status: 'rejected' }),
         Lesson.countDocuments({}),
         Lesson.countDocuments({ isPublished: true }),
         Quiz.countDocuments({}),
@@ -61,6 +65,7 @@ async function handler(req: NextRequest): Promise<NextResponse> {
         User.countDocuments({ role: 'parent' }),
         PointTransaction.aggregate([{ $group: { _id: null, total: { $sum: '$amount' } } }]),
     ]);
+
 
     const totalPointsAwarded = pointsAgg[0]?.total || 0;
 
@@ -97,7 +102,10 @@ async function handler(req: NextRequest): Promise<NextResponse> {
                 activeSubscriptions: activeSubscriptionsCount,
                 expiredSubscriptions: expiredSubscriptionsCount,
                 pendingPayments: pendingPaymentsCount,
+                approvedPayments: approvedPaymentsCount,
+                rejectedPayments: rejectedPaymentsCount,
             },
+
             content: {
                 totalLessons,
                 publishedLessons,

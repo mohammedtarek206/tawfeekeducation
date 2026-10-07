@@ -3,6 +3,8 @@ import connectDB from '@/lib/db/connect';
 import PaymentRequest from '@/lib/db/models/PaymentRequest';
 import SubscriptionPlan from '@/lib/db/models/SubscriptionPlan';
 import User from '@/lib/db/models/User';
+import Subscription from '@/lib/db/models/Subscription';
+import Notification from '@/lib/db/models/Notification';
 import { withAdmin } from '@/lib/auth/middleware';
 import { JWTPayload } from '@/lib/auth/jwt';
 
@@ -53,6 +55,26 @@ async function putHandler(req: NextRequest, ctx: any, admin: JWTPayload): Promis
             }
 
             await student.save();
+
+            // Create real Subscription record
+            await Subscription.create({
+                studentId: student._id,
+                planId: plan._id,
+                gradeId: student.grade || plan.grade,
+                status: 'active',
+                source: 'payment',
+                startDate,
+                endDate,
+                paymentRequestId: request._id,
+            });
+
+            // Create Notification
+            await Notification.create({
+                user: student._id,
+                type: 'announcement',
+                title: 'تم قبول طلب الاشتراك 🎉',
+                message: `تم تفعيل اشتراكك في باقة "${plan.name}" بنجاح حتى تاريخ ${endDate.toLocaleDateString('ar-EG')}.`,
+            });
         }
     } else if (status === 'rejected') {
         const student = await User.findById(request.studentId);
@@ -60,6 +82,14 @@ async function putHandler(req: NextRequest, ctx: any, admin: JWTPayload): Promis
             student.subscriptionStatus = 'rejected';
             student.rejectionReason = adminNote || 'تم رفض طلب الاشتراك من الإدارة';
             await student.save();
+
+            // Create Notification
+            await Notification.create({
+                user: student._id,
+                type: 'announcement',
+                title: 'تم رفض طلب الاشتراك ❌',
+                message: adminNote ? `سبب الرفض: ${adminNote}` : 'تم رفض طلب الاشتراك من قبل الإدارة.',
+            });
         }
     }
 
@@ -69,3 +99,4 @@ async function putHandler(req: NextRequest, ctx: any, admin: JWTPayload): Promis
 }
 
 export const PUT = withAdmin(putHandler);
+

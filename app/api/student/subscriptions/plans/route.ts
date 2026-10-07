@@ -4,6 +4,7 @@ import SubscriptionPlan from '@/lib/db/models/SubscriptionPlan';
 import { withStudent } from '@/lib/auth/middleware';
 import { JWTPayload } from '@/lib/auth/jwt';
 import User from '@/lib/db/models/User';
+import Subscription from '@/lib/db/models/Subscription';
 import { getFreeOfferStats, getFreeOfferSettings } from '@/lib/settings/freeOffer';
 
 export const revalidate = 0;
@@ -27,6 +28,11 @@ async function getHandler(req: NextRequest, _ctx: unknown, studentPayload: JWTPa
         .sort({ createdAt: -1 })
         .lean();
 
+    const activeSubscriptions = await Subscription.find({ studentId: student._id })
+        .populate('planId')
+        .sort({ createdAt: -1 })
+        .lean();
+
     return NextResponse.json({
         success: true,
         data: {
@@ -41,6 +47,7 @@ async function getHandler(req: NextRequest, _ctx: unknown, studentPayload: JWTPa
             subscriptionEndDate: student.subscriptionEndDate,
             rejectionReason: student.rejectionReason,
             requestsHistory,
+            activeSubscriptions,
             freeOfferStats,
             freeOfferSettings,
         },
@@ -48,3 +55,4 @@ async function getHandler(req: NextRequest, _ctx: unknown, studentPayload: JWTPa
 }
 
 export const GET = withStudent(getHandler);
+

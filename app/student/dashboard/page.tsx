@@ -110,8 +110,43 @@ export default function StudentDashboardOverview() {
                 </div>
             </div>
 
+            {/* ======= SUBSCRIPTION STATUS BANNER ======= */}
+            {!student.hasActiveSubscription && student.status === 'approved' && (
+                <div className={`rounded-2xl p-5 border-2 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm
+                    ${student.subscriptionReason === 'subscription_expired'
+                        ? 'bg-amber-50 border-amber-300'
+                        : 'bg-blue-50 border-blue-200'
+                    }`}
+                >
+                    <div className="flex items-center gap-4">
+                        <span className="text-3xl shrink-0">
+                            {student.subscriptionReason === 'subscription_expired' ? '⌛' : '🔒'}
+                        </span>
+                        <div>
+                            <h3 className={`font-black text-lg ${student.subscriptionReason === 'subscription_expired' ? 'text-amber-900' : 'text-blue-900'}`}>
+                                {student.subscriptionReason === 'subscription_expired'
+                                    ? 'انتهت صلاحية اشتراكك'
+                                    : 'لا يوجد اشتراك نشط'}
+                            </h3>
+                            <p className={`text-sm mt-0.5 ${student.subscriptionReason === 'subscription_expired' ? 'text-amber-800' : 'text-blue-800'}`}>
+                                {student.subscriptionReason === 'subscription_expired'
+                                    ? 'جدد اشتراكك للوصول الكامل إلى الدروس والاختبارات والمحتوى المدفوع.'
+                                    : 'اشترك الآن للوصول إلى كافة المحتويات أو استفد من العرض المجاني إن كان متاحاً.'}
+                            </p>
+                        </div>
+                    </div>
+                    <Link
+                        href="/subscriptions"
+                        className="btn-gold px-6 py-2.5 text-sm font-bold shrink-0 shadow-md"
+                    >
+                        {student.subscriptionReason === 'subscription_expired' ? 'تجديد الاشتراك' : 'عرض الباقات'}
+                    </Link>
+                </div>
+            )}
+
             {/* Stats Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+
                 <StatCard title="الدروس المكتملة" value={stats.completedLessons} sub={`${stats.totalLessons} إجمالي`} icon="🗺️" color="bg-geo/10 text-geo" />
                 <StatCard title="متوسط الاختبارات" value={`${stats.avgScore}%`} sub={`${stats.examCount} اختبار`} icon="📈" color="bg-forest/10 text-forest" />
                 <StatCard title="المستوى الحالي" value={student.level} sub="مستكشف معتمد" icon="⭐" color="bg-gold/10 text-gold-dark" />

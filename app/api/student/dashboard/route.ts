@@ -11,12 +11,13 @@ import Achievement from '@/lib/db/models/Achievement';
 import StudentAchievement from '@/lib/db/models/StudentAchievement';
 import { withStudent } from '@/lib/auth/middleware';
 import { JWTPayload } from '@/lib/auth/jwt';
+import { checkStudentAccess } from '@/lib/subscriptions/checkAccess';
 
 async function handler(req: NextRequest, _ctx: unknown, student: JWTPayload): Promise<NextResponse> {
     await connectDB();
 
     const studentUser = await User.findById(student.userId).select(
-        'name points level streak grade isFreeStudent referralCode parentLinkingCode'
+        'name points level streak grade isFreeStudent subscriptionStatus subscriptionEndDate status referralCode parentLinkingCode'
     );
     if (!studentUser) {
         return NextResponse.json({ success: false, message: 'الطالب غير موجود' }, { status: 404 });
@@ -137,6 +138,11 @@ async function handler(req: NextRequest, _ctx: unknown, student: JWTPayload): Pr
         latest: earnedAchievements.map((e: any) => e.achievement).filter(Boolean),
     };
 
+    // Check subscription access for dashboard badge
+    const accessCheck = await checkStudentAccess(student.userId);
+    const hasActiveSubscription = accessCheck.canAccess || accessCheck.reason === 'content_is_free';
+    const subscriptionReason = accessCheck.reason;
+
     return NextResponse.json({
         success: true,
         data: {
@@ -146,9 +152,14 @@ async function handler(req: NextRequest, _ctx: unknown, student: JWTPayload): Pr
                 level: studentUser.level,
                 streak: studentUser.streak,
                 grade: studentUser.grade,
-                isFreeStudent: studentUser.isFreeStudent,
+                isFreeStudent: Boolean(studentUser.isFreeStudent),
+                subscriptionStatus: studentUser.subscriptionStatus,
+                subscriptionEndDate: studentUser.subscriptionEndDate,
+                status: studentUser.status,
                 referralCode: studentUser.referralCode,
                 parentLinkingCode: studentUser.parentLinkingCode,
+                hasActiveSubscription,
+                subscriptionReason,
             },
             stats: {
                 completedLessons,

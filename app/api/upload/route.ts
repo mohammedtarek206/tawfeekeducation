@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { writeFile } from 'fs/promises';
-import { join } from 'path';
 import { withStudent } from '@/lib/auth/middleware';
-import fs from 'fs';
+
+// Allow up to 8MB request body for Base64 image uploads
+export const maxDuration = 30;
+
+
+const MAX_SIZE_MB = 5;
+const ALLOWED_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
 
 async function postHandler(req: NextRequest) {
     try {
@@ -13,23 +17,34 @@ async function postHandler(req: NextRequest) {
             return NextResponse.json({ success: false, message: 'لم يتم رفع ملف' }, { status: 400 });
         }
 
-        const buffer = Buffer.from(await file.arrayBuffer());
-        const ext = file.name.split('.').pop()?.replace(/[^a-zA-Z0-9]/g, '') || 'png';
-        const filename = `${crypto.randomUUID()}.${ext}`;
-        const uploadDir = join(process.cwd(), 'public', 'uploads');
-
-        if (!fs.existsSync(uploadDir)) {
-            fs.mkdirSync(uploadDir, { recursive: true });
+        // Validate file type
+        if (!ALLOWED_TYPES.includes(file.type)) {
+            return NextResponse.json(
+                { success: false, message: 'نوع الملف غير مدعوم. الرجاء رفع صورة (JPG, PNG, WEBP)' },
+                { status: 400 }
+            );
         }
 
-        const filePath = join(uploadDir, filename);
-        await writeFile(filePath, buffer);
+        // Validate file size
+        const sizeInMB = file.size / (1024 * 1024);
+        if (sizeInMB > MAX_SIZE_MB) {
+            return NextResponse.json(
+                { success: false, message: `حجم الصورة كبير جداً. الحد الأقصى ${MAX_SIZE_MB} ميجابايت` },
+                { status: 400 }
+            );
+        }
 
-        return NextResponse.json({ success: true, url: `/uploads/${filename}` });
+        // Convert to Base64 — works on Vercel and any serverless environment
+        const buffer = await file.arrayBuffer();
+        const base64 = Buffer.from(buffer).toString('base64');
+        const dataUri = `data:${file.type};base64,${base64}`;
+
+        return NextResponse.json({ success: true, url: dataUri });
     } catch (error) {
         console.error('Upload Error:', error);
-        return NextResponse.json({ success: false, message: 'فشل رفع الملف' }, { status: 500 });
+        return NextResponse.json({ success: false, message: 'فشل معالجة الملف، يرجى إعادة المحاولة' }, { status: 500 });
     }
 }
 
 export const POST = withStudent(postHandler);
+

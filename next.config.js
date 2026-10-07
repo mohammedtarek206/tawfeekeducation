@@ -24,7 +24,14 @@ const nextConfig = {
             },
         ],
     },
+    // Increase body size limit for the upload API route (Base64 images)
+    experimental: {
+        serverActions: {
+            bodySizeLimit: '8mb',
+        },
+    },
     async headers() {
+
         // Shared security headers
         const securityHeaders = [
             { key: 'X-Content-Type-Options', value: 'nosniff' },

@@ -111,6 +111,7 @@ export default function AdminStudentsPage() {
                                 <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase">رقم الهاتف</th>
                                 <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase">الصف</th>
                                 <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase">الحالة</th>
+                                <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase">الاشتراك</th>
                                 <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase">النقاط</th>
                                 <th className="px-6 py-4 text-xs font-bold text-gray-500 uppercase text-center">إجراءات</th>
                             </tr>
@@ -118,11 +119,11 @@ export default function AdminStudentsPage() {
                         <tbody className="divide-y divide-gray-100">
                             {loading ? (
                                 <tr>
-                                    <td colSpan={6} className="text-center py-10 text-gray-500 animate-pulse">جاري التحميل...</td>
+                                    <td colSpan={7} className="text-center py-10 text-gray-500 animate-pulse">جاري التحميل...</td>
                                 </tr>
                             ) : !data || data.students.length === 0 ? (
                                 <tr>
-                                    <td colSpan={6} className="text-center py-10 text-gray-500">لا يوجد طلاب يطابقون بحثك</td>
+                                    <td colSpan={7} className="text-center py-10 text-gray-500">لا يوجد طلاب يطابقون بحثك</td>
                                 </tr>
                             ) : (
                                 data.students.map((st: any) => (
@@ -144,6 +145,17 @@ export default function AdminStudentsPage() {
                                                         st.status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-gray-200 text-gray-700'}`}>
                                                 {st.status === 'approved' ? 'مقبول' : st.status === 'pending' ? 'قيد الموافقة' : st.status === 'rejected' ? 'مرفوض' : 'موقوف'}
                                             </span>
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            {st.isFreeStudent ? (
+                                                <span className="px-2.5 py-1 rounded-md text-xs font-bold bg-amber-100 text-amber-700">مجاني</span>
+                                            ) : st.subscriptionStatus === 'active' ? (
+                                                <span className="px-2.5 py-1 rounded-md text-xs font-bold bg-emerald-100 text-emerald-700">نشط</span>
+                                            ) : st.subscriptionStatus === 'expired' ? (
+                                                <span className="px-2.5 py-1 rounded-md text-xs font-bold bg-rose-100 text-rose-700">منتهي</span>
+                                            ) : (
+                                                <span className="px-2.5 py-1 rounded-md text-xs font-bold bg-gray-100 text-gray-500">لا يوجد</span>
+                                            )}
                                         </td>
                                         <td className="px-6 py-4 font-bold text-tawfeek-gold">{st.points}</td>
                                         <td className="px-6 py-4 text-center">
