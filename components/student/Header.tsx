@@ -113,7 +113,7 @@ export default function Header() {
                                     <div className="text-xs text-gray-500 font-mono mt-0.5">رقم الهاتف: {user.phone}</div>
                                 )}
                                 <div className="text-xs text-forest font-bold mt-1">
-                                    المرحلة: {gradeLabel(user?.grade)}
+                                    المرحلة: {gradeLabel(user?.grade || '')}
                                 </div>
                                 <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-100 text-xs">
                                     <span className="text-gray-500">الحساب: <strong className="text-emerald-700">{statusLabel}</strong></span>
