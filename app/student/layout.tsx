@@ -2,6 +2,7 @@
 
 import Sidebar from '@/components/student/Sidebar';
 import Header from '@/components/student/Header';
+import DevCredit from '@/components/shared/DevCredit';
 
 export default function StudentLayout({
     children,
@@ -16,7 +17,9 @@ export default function StudentLayout({
                 <main className="flex-1 p-4 sm:p-6 lg:p-8 w-full max-w-7xl mx-auto overflow-x-hidden">
                     {children}
                 </main>
+                <DevCredit />
             </div>
         </div>
     );
 }
+

@@ -3,6 +3,7 @@
 import { usePathname } from 'next/navigation';
 import Sidebar from '@/components/admin/Sidebar';
 import Header from '@/components/admin/Header';
+import DevCredit from '@/components/shared/DevCredit';
 
 export default function AdminLayout({
     children,
@@ -24,7 +25,9 @@ export default function AdminLayout({
                 <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-x-hidden">
                     {children}
                 </main>
+                <DevCredit />
             </div>
         </div>
     );
 }
+

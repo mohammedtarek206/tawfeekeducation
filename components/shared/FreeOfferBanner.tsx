@@ -68,6 +68,8 @@ export default function FreeOfferBanner({
     const [offer, setOffer] = useState<PublicOffer | null>(null);
     const [loading, setLoading] = useState(true);
     const [countdown, setCountdown] = useState<string | null>(null);
+    // isMounted prevents any date-dependent values from rendering on the server
+    const [isMounted, setIsMounted] = useState(false);
 
     const fetchOffer = useCallback(async () => {
         try {
@@ -85,6 +87,7 @@ export default function FreeOfferBanner({
                     setOffer(null);
                 } else {
                     setOffer(o);
+                    // Only compute countdown on client to avoid hydration mismatch
                     setCountdown(getCountdown(o.endDate));
                 }
             } else {
@@ -98,6 +101,7 @@ export default function FreeOfferBanner({
     }, [studentGrade]);
 
     useEffect(() => {
+        setIsMounted(true);
         fetchOffer();
         const interval = setInterval(fetchOffer, 30_000);
         return () => clearInterval(interval);
@@ -152,8 +156,8 @@ export default function FreeOfferBanner({
             <div className={`rounded-2xl border border-amber-200 bg-amber-50 ${compact ? 'p-4' : 'p-6'} text-center`}>
                 <div className="text-2xl mb-2">⏳</div>
                 <div className="font-black text-amber-700 text-sm mb-1">العرض لم يبدأ بعد</div>
-                {offer.startDate && (
-                    <div className="text-xs text-amber-600">
+                {offer.startDate && isMounted && (
+                    <div className="text-xs text-amber-600" suppressHydrationWarning>
                         يبدأ في {new Date(offer.startDate).toLocaleDateString('ar-EG')}
                     </div>
                 )}
