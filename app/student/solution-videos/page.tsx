@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import VideoPlayer from '@/components/shared/VideoPlayer';
@@ -18,7 +18,7 @@ type SolutionVideo = {
     createdAt: string;
 };
 
-export default function StudentSolutionVideosPage() {
+function SolutionVideosContent() {
     const searchParams = useSearchParams();
     const lessonIdParam = searchParams.get('lessonId');
 
@@ -229,5 +229,23 @@ export default function StudentSolutionVideosPage() {
                 </div>
             )}
         </div>
+    );
+}
+
+export default function StudentSolutionVideosPage() {
+    return (
+        <Suspense
+            fallback={
+                <div className="max-w-5xl mx-auto space-y-6 pt-4">
+                    <div className="h-64 bg-gray-200 animate-pulse rounded-2xl" />
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="h-40 bg-gray-200 animate-pulse rounded-xl" />
+                        <div className="h-40 bg-gray-200 animate-pulse rounded-xl" />
+                    </div>
+                </div>
+            }
+        >
+            <SolutionVideosContent />
+        </Suspense>
     );
 }
