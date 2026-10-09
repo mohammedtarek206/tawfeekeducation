@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { withAdmin } from '@/lib/auth/middleware';
 import { JWTPayload } from '@/lib/auth/jwt';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { parseQuestionsFromText } from '../parse/route';
+import { parseQuestionsFromText } from '@/lib/utils/questionParser';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
