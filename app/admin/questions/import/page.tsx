@@ -82,6 +82,28 @@ export default function QuestionImportPage() {
         });
     };
 
+    const updateQuestion = (idx: number, fields: Partial<ParsedQuestion>) => {
+        setPreview((prev) =>
+            prev.map((q) => {
+                if (q.index !== idx) return q;
+                const updated = { ...q, ...fields };
+                // re-evaluate validity
+                const hasText = Boolean(updated.text && updated.text.trim());
+                const hasAnswer = Boolean((updated.correctAnswer || updated.answer || '').trim());
+                updated.valid = hasText && (hasAnswer || updated.type === 'essay');
+                if (!hasText) updated.error = 'النص فارغ';
+                else if (!hasAnswer && updated.type !== 'essay') updated.error = 'الإجابة مفقودة';
+                else updated.error = undefined;
+                return updated;
+            })
+        );
+    };
+
+    const deleteQuestion = (idx: number) => {
+        setPreview((prev) => prev.filter((q) => q.index !== idx));
+        setStats((prev) => prev ? { ...prev, total: prev.total - 1 } : null);
+    };
+
     const handleImport = async () => {
         if (!grade) { setError('يرجى اختيار الصف'); return; }
         if (!subject) { setError('يرجى اختيار المادة'); return; }
@@ -287,30 +309,61 @@ export default function QuestionImportPage() {
                                         >
                                             {!isSkipped && <span className="text-xs">✓</span>}
                                         </button>
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex items-center gap-2 flex-wrap mb-1">
-                                                <span className="text-xs text-gray-400">#{q.index + 1}</span>
-                                                <span className="text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-semibold uppercase">{q.type || 'true_false'}</span>
-                                                {q.isDuplicate && <span className="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-semibold">مكرر</span>}
-                                                {!q.valid && <span className="text-[10px] bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-semibold">{q.error || 'غير صالح'}</span>}
+                                        <div className="flex-1 min-w-0 space-y-2">
+                                            <div className="flex items-center justify-between flex-wrap gap-2">
+                                                <div className="flex items-center gap-2 flex-wrap">
+                                                    <span className="text-xs text-gray-400">#{q.index + 1}</span>
+                                                    <span className="text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-semibold uppercase">{q.type || 'short_answer'}</span>
+                                                    {q.isDuplicate && <span className="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-semibold">مكرر</span>}
+                                                    {!q.valid && <span className="text-[10px] bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-semibold">{q.error || 'غير صالح'}</span>}
+                                                </div>
+                                                <button
+                                                    onClick={() => deleteQuestion(q.index)}
+                                                    className="text-xs font-bold text-red-500 hover:text-red-700 hover:underline"
+                                                >
+                                                    🗑 حذف
+                                                </button>
                                             </div>
-                                            <p className="text-sm font-semibold text-gray-800" dir="rtl">{q.text}</p>
+
+                                            <input
+                                                type="text"
+                                                value={q.text}
+                                                onChange={(e) => updateQuestion(q.index, { text: e.target.value })}
+                                                className="w-full text-sm font-semibold text-gray-800 border border-gray-200 rounded-lg px-3 py-1.5 focus:border-forest outline-none"
+                                                dir="rtl"
+                                            />
 
                                             {q.type === 'mcq' && q.options && q.options.length > 0 && (
-                                                <div className="flex flex-col gap-1 mt-2 mb-2 pr-2 border-r-2 border-gray-100">
+                                                <div className="flex flex-col gap-1 pr-2 border-r-2 border-gray-100">
                                                     {q.options.map((opt, i) => (
-                                                        <div key={i} className="text-xs text-gray-600">
-                                                            • {opt}
+                                                        <div key={i} className="flex items-center gap-2">
+                                                            <span className="text-xs text-gray-400">•</span>
+                                                            <input
+                                                                type="text"
+                                                                value={opt}
+                                                                onChange={(e) => {
+                                                                    const newOpts = [...(q.options || [])];
+                                                                    newOpts[i] = e.target.value;
+                                                                    updateQuestion(q.index, { options: newOpts });
+                                                                }}
+                                                                className="flex-1 text-xs text-gray-700 border border-gray-100 rounded px-2 py-1 focus:border-forest outline-none"
+                                                            />
                                                         </div>
                                                     ))}
                                                 </div>
                                             )}
 
-                                            {(q.answer || q.correctAnswer) && (
-                                                <p className="text-xs text-green-700 bg-green-50 rounded-lg px-2 py-1 mt-1 inline-block" dir="rtl">
-                                                    ✓ {q.correctAnswer || q.answer}
-                                                </p>
-                                            )}
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-xs font-bold text-green-700">الإجابة:</span>
+                                                <input
+                                                    type="text"
+                                                    value={q.correctAnswer || q.answer || ''}
+                                                    onChange={(e) => updateQuestion(q.index, { correctAnswer: e.target.value, answer: e.target.value })}
+                                                    className="flex-1 text-xs text-green-800 font-bold bg-green-50/70 border border-green-200 rounded-lg px-3 py-1 focus:border-forest outline-none"
+                                                    placeholder="اكتب الإجابة النموذجية..."
+                                                    dir="rtl"
+                                                />
+                                            </div>
                                         </div>
                                     </div>
                                 );

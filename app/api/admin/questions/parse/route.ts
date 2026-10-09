@@ -13,84 +13,99 @@ import { JWTPayload } from '@/lib/auth/jwt';
  *   س١ - السؤال / ج - الإجابة
  *   السؤال بدون prefix / الإجابة تحته مباشرة
  */
-function parseQuestionsFromText(raw: string): Array<{
+export interface ParsedItem {
     text: string;
     answer: string;
+    options: string[];
+    correctAnswer: string;
+    type: 'mcq' | 'true_false' | 'short_answer' | 'essay';
     valid: boolean;
     error?: string;
-}> {
-    const results: Array<{ text: string; answer: string; valid: boolean; error?: string }> = [];
+}
 
-    // Normalize
-    const text = raw
+export function parseQuestionsFromText(raw: string): ParsedItem[] {
+    const results: ParsedItem[] = [];
+
+    // Normalize newlines
+    const normalized = raw
         .replace(/\r\n/g, '\n')
         .replace(/\r/g, '\n')
         .replace(/\t/g, ' ')
         .trim();
 
-    const lines = text.split('\n');
+    // Split blocks by double newline or numbered questions (e.g. 1. 2. or س1:)
+    const blocks = normalized.split(/\n\s*\n+/);
 
-    // Try structured pattern parsing (س:/ج:, Q:/A:, Question:/Answer:)
-    const questionPrefixes = /^(?:س\s*[:：\-–]?\s*\d*\s*[:：\-–]?\s*|سؤال\s*[:：\-–]?\s*|Q\s*[:：\-–]\s*|Question\s*[:：\-–]\s*)/i;
-    const answerPrefixes = /^(?:ج\s*[:：\-–]?\s*\d*\s*[:：\-–]?\s*|جواب\s*[:：\-–]?\s*|إجابة\s*[:：\-–]?\s*|A\s*[:：\-–]\s*|Answer\s*[:：\-–]\s*|الإجابة\s*[:：\-–]?\s*)/i;
+    const qPrefixRegex = /^(?:س\s*[:：\-–]?\s*\d*|سؤال\s*\d*|Q\s*[:：\-–]?\s*\d*|Question\s*\d*|\d+[\.\-\)])\s*[:：\-–]?\s*/i;
+    const aPrefixRegex = /^(?:ج\s*[:：\-–]?|جواب|إجابة|A\s*[:：\-–]?|Answer|الإجابة)\s*[:：\-–]?\s*/i;
+    const choicePrefixRegex = /^(?:[أبجدA-Da-d1-4][\.\-\)]|\-|\*)\s*/;
 
-    let i = 0;
-    while (i < lines.length) {
-        const line = lines[i].trim();
+    for (const block of blocks) {
+        const lines = block.split('\n').map((l) => l.trim()).filter(Boolean);
+        if (!lines.length) continue;
 
-        if (!line) { i++; continue; }
+        let questionText = '';
+        let answerText = '';
+        const options: string[] = [];
 
-        // Detect question line
-        if (questionPrefixes.test(line)) {
-            const questionText = line.replace(questionPrefixes, '').trim();
+        // Find question line
+        const firstLine = lines[0];
+        questionText = firstLine.replace(qPrefixRegex, '').trim();
 
-            // Collect continuation lines (not starting with answer prefix)
-            let j = i + 1;
-            const questionLines = [questionText];
-            while (j < lines.length && lines[j].trim() && !answerPrefixes.test(lines[j].trim()) && !questionPrefixes.test(lines[j].trim())) {
-                questionLines.push(lines[j].trim());
-                j++;
-            }
-
-            // Skip empty lines between Q and A
-            while (j < lines.length && !lines[j].trim()) j++;
-
-            // Look for answer
-            if (j < lines.length && answerPrefixes.test(lines[j].trim())) {
-                const answerText = lines[j].replace(answerPrefixes, '').trim();
-                const answerLines = [answerText];
-                j++;
-                while (j < lines.length && lines[j].trim() && !questionPrefixes.test(lines[j].trim()) && !answerPrefixes.test(lines[j].trim())) {
-                    answerLines.push(lines[j].trim());
-                    j++;
-                }
-                const finalQ = questionLines.join(' ').trim();
-                const finalA = answerLines.join(' ').trim();
-                if (finalQ && finalA) {
-                    results.push({ text: finalQ, answer: finalA, valid: true });
+        for (let i = 1; i < lines.length; i++) {
+            const line = lines[i];
+            if (aPrefixRegex.test(line)) {
+                answerText = line.replace(aPrefixRegex, '').trim();
+            } else if (choicePrefixRegex.test(line)) {
+                options.push(line.replace(choicePrefixRegex, '').trim());
+            } else if (!answerText) {
+                // Could be option line or continuation of question
+                if (options.length > 0) {
+                    options.push(line);
                 } else {
-                    results.push({ text: finalQ || '(فارغ)', answer: '', valid: false, error: 'الإجابة فارغة' });
+                    questionText += ' ' + line;
                 }
-            } else {
-                const finalQ = questionLines.join(' ').trim();
-                results.push({ text: finalQ, answer: '', valid: false, error: 'لم يتم العثور على إجابة' });
             }
-            i = j;
-        } else {
-            i++;
         }
-    }
 
-    // If nothing parsed, try block parsing (every 2 non-empty lines = Q+A)
-    if (results.length === 0) {
-        const nonEmpty = lines.filter((l) => l.trim());
-        for (let k = 0; k + 1 < nonEmpty.length; k += 2) {
-            const q = nonEmpty[k].trim();
-            const a = nonEmpty[k + 1].trim();
-            if (q && a) {
-                results.push({ text: q, answer: a, valid: true });
+        if (!questionText) continue;
+
+        // Determine question type & validity
+        let qType: 'mcq' | 'true_false' | 'short_answer' | 'essay' = 'short_answer';
+        let isValid = true;
+        let errMsg: string | undefined;
+
+        if (options.length > 1) {
+            qType = 'mcq';
+            if (!answerText && options.length > 0) {
+                // Check if answer is indicated in one of the options or default first
+                answerText = options[0];
             }
+        } else if (answerText === 'صح' || answerText === 'خطأ' || answerText.toLowerCase() === 'true' || answerText.toLowerCase() === 'false') {
+            qType = 'true_false';
+            if (answerText.toLowerCase() === 'true') answerText = 'صح';
+            if (answerText.toLowerCase() === 'false') answerText = 'خطأ';
+        } else {
+            qType = 'short_answer';
         }
+
+        if (!answerText && (qType as string) !== 'essay') {
+            isValid = false;
+            errMsg = 'الإجابة مفقودة';
+        } else if (qType === 'mcq' && options.length < 2) {
+            isValid = false;
+            errMsg = 'خيارات MCQ غير كافية';
+        }
+
+        results.push({
+            text: questionText,
+            answer: answerText,
+            options,
+            correctAnswer: answerText,
+            type: qType,
+            valid: isValid,
+            error: errMsg,
+        });
     }
 
     return results;

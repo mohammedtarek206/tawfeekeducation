@@ -72,9 +72,34 @@ async function getHandler(req: NextRequest): Promise<NextResponse> {
         .limit(limit)
         .lean();
 
+    // Top students by points
+    const topStudents = await User.find({ role: 'student' })
+        .select('name phone points grade')
+        .sort({ points: -1 })
+        .limit(10)
+        .lean();
+
+    // Calculate total points awarded
+    const [txAgg, userAgg] = await Promise.all([
+        PointTransaction.aggregate([{ $match: { amount: { $gt: 0 } } }, { $group: { _id: null, total: { $sum: '$amount' } } }]),
+        User.aggregate([{ $match: { role: 'student' } }, { $group: { _id: null, total: { $sum: '$points' } } }]),
+    ]);
+
+    const txPoints = txAgg[0]?.total || 0;
+    const userPoints = userAgg[0]?.total || 0;
+    const totalPointsAwarded = Math.max(txPoints, userPoints);
+
     return NextResponse.json({
         success: true,
-        data: { transactions, total, page, pages: Math.ceil(total / limit) },
+        data: {
+            transactions,
+            total,
+            totalTransactions: total,
+            topStudents,
+            totalPointsAwarded,
+            page,
+            pages: Math.ceil(total / limit),
+        },
     });
 }
 

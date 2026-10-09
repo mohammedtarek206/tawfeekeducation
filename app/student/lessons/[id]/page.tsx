@@ -15,6 +15,7 @@ export default function LessonDetailsPage() {
     const [error, setError] = useState('');
     const [blockedReason, setBlockedReason] = useState<string | null>(null);
     const [linkedQuiz, setLinkedQuiz] = useState<any>(null);
+    const [solutionVideos, setSolutionVideos] = useState<any[]>([]);
 
     useEffect(() => {
         if (!id) return;
@@ -30,6 +31,16 @@ export default function LessonDetailsPage() {
                         .then((qRes) => {
                             if (qRes.success && qRes.data?.exams?.length > 0) {
                                 setLinkedQuiz(qRes.data.exams[0]);
+                            }
+                        })
+                        .catch(() => { });
+
+                    // Fetch linked solution videos
+                    fetch(`/api/student/solution-videos?lessonId=${id}`)
+                        .then((r) => r.json())
+                        .then((sRes) => {
+                            if (sRes.success) {
+                                setSolutionVideos(sRes.data?.videos || []);
                             }
                         })
                         .catch(() => { });
@@ -130,6 +141,60 @@ export default function LessonDetailsPage() {
                 </button>
             </div>
 
+            {/* Linked Solution Videos Section */}
+            {solutionVideos.length > 0 && (
+                <div className="bg-white p-6 rounded-2xl border border-gold/30 shadow-sm space-y-4">
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <h3 className="text-xl font-black text-gray-900 flex items-center gap-2">
+                                <span>💡</span>
+                                <span>فيديو الحل والتدريبات لهذه الحصة</span>
+                            </h3>
+                            <p className="text-xs text-gray-500 mt-1">شاهد الحل المنهجي والخطوات بالتفصيل للتمارين والأسئلة الخاصة بهذه الحصة</p>
+                        </div>
+                        <Link
+                            href={`/student/solution-videos?lessonId=${data._id}`}
+                            className="text-xs font-bold text-tawfeek-green bg-tawfeek-green/10 hover:bg-tawfeek-green/20 px-3.5 py-2 rounded-xl transition-all"
+                        >
+                            عرض الكل ↗
+                        </Link>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {solutionVideos.map((sVideo) => (
+                            <Link
+                                key={sVideo._id}
+                                href={`/student/solution-videos?lessonId=${data._id}`}
+                                className="group flex items-center gap-3 p-3 rounded-xl border border-gray-100 hover:border-gold/50 bg-gray-50 hover:bg-white transition-all shadow-xs"
+                            >
+                                <div className="w-20 h-14 rounded-lg bg-black/90 overflow-hidden relative shrink-0">
+                                    {sVideo.youtubeId ? (
+                                        <img
+                                            src={`https://img.youtube.com/vi/${sVideo.youtubeId}/mqdefault.jpg`}
+                                            alt={sVideo.title}
+                                            className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                                        />
+                                    ) : (
+                                        <div className="w-full h-full flex items-center justify-center text-xl text-white">🎬</div>
+                                    )}
+                                    <div className="absolute inset-0 bg-black/20 flex items-center justify-center">
+                                        <div className="w-7 h-7 rounded-full bg-tawfeek-green text-white flex items-center justify-center text-xs">▶</div>
+                                    </div>
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                    <h4 className="font-bold text-sm text-gray-900 line-clamp-1 group-hover:text-tawfeek-green transition-colors">
+                                        {sVideo.title}
+                                    </h4>
+                                    <p className="text-xs text-gray-400 mt-0.5 line-clamp-1">
+                                        {sVideo.description || 'شاهد الحل والتدريبات'}
+                                    </p>
+                                </div>
+                            </Link>
+                        ))}
+                    </div>
+                </div>
+            )}
+
             {/* Additional Features Links */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-8">
                 <Link
@@ -159,7 +224,7 @@ export default function LessonDetailsPage() {
                         💡
                     </div>
                     <div>
-                        <h4 className="font-bold text-gray-900 mb-1">فيديوهات الحل</h4>
+                        <h4 className="font-bold text-gray-900 mb-1">فيديوهات الحل والتدريبات</h4>
                         <p className="text-xs text-gray-500">شاهد حلول وتفسيرات الأسئلة الصعبة لهذه الحصة.</p>
                     </div>
                 </Link>

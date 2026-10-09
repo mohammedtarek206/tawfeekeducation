@@ -138,6 +138,23 @@ async function handler(req: NextRequest, _ctx: unknown, student: JWTPayload): Pr
         latest: earnedAchievements.map((e: any) => e.achievement).filter(Boolean),
     };
 
+    // ---- REFERRAL SUMMARY ----
+    const { ensureUserReferralCode } = await import('@/lib/referrals/processor');
+    const referralCode = await ensureUserReferralCode(studentUser);
+
+    const { default: Referral } = await import('@/lib/db/models/Referral');
+    const referralDocs = await Referral.find({ referrer: student.userId }).lean();
+    const referralSummary = {
+        code: referralCode,
+        total: referralDocs.length,
+        pending: referralDocs.filter((r: any) => r.status === 'pending').length,
+        approved: referralDocs.filter((r: any) => r.status === 'approved' || r.status === 'verified').length,
+        rewarded: referralDocs.filter((r: any) => r.status === 'rewarded').length,
+        pointsEarned: referralDocs
+            .filter((r: any) => r.status === 'rewarded')
+            .reduce((sum: number, r: any) => sum + (r.pointsAmount || 0), 0),
+    };
+
     // Check subscription access for dashboard badge
     const accessCheck = await checkStudentAccess(student.userId);
     const hasActiveSubscription = accessCheck.canAccess || accessCheck.reason === 'content_is_free';
@@ -156,7 +173,7 @@ async function handler(req: NextRequest, _ctx: unknown, student: JWTPayload): Pr
                 subscriptionStatus: studentUser.subscriptionStatus,
                 subscriptionEndDate: studentUser.subscriptionEndDate,
                 status: studentUser.status,
-                referralCode: studentUser.referralCode,
+                referralCode,
                 parentLinkingCode: studentUser.parentLinkingCode,
                 hasActiveSubscription,
                 subscriptionReason,
@@ -174,6 +191,7 @@ async function handler(req: NextRequest, _ctx: unknown, student: JWTPayload): Pr
             unreadNotifications,
             taskSummary,
             achievementSummary,
+            referralSummary,
         },
     });
 }

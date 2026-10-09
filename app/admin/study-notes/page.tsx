@@ -54,6 +54,23 @@ export default function StudyNotesAdminPage() {
         finally { setSaving(false); }
     };
 
+    const handleDelete = async (id: string, title: string) => {
+        if (!confirm(`هل أنت متأكد من حذف المذكرة «${title}»؟`)) return;
+        try {
+            const res = await fetch(`/api/admin/study-notes/${id}`, { method: 'DELETE' });
+            const data = await res.json();
+            if (data.success) {
+                setSuccess('تم حذف المذكرة بنجاح');
+                load();
+                setTimeout(() => setSuccess(''), 3000);
+            } else {
+                alert(data.message || 'خطأ في الحذف');
+            }
+        } catch {
+            alert('حدث خطأ بالخادم');
+        }
+    };
+
     return (
         <div className="space-y-6">
             <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
@@ -149,6 +166,13 @@ export default function StudyNotesAdminPage() {
                                     </div>
                                     {note.description && <p className="text-xs text-gray-500 mt-2">{note.description}</p>}
                                 </div>
+                                <button
+                                    onClick={() => handleDelete(note._id, note.title)}
+                                    className="text-xs bg-red-50 text-red-600 px-3 py-1.5 rounded-lg hover:bg-red-100 font-bold border border-red-200 transition-colors shrink-0"
+                                    title="حذف المذكرة"
+                                >
+                                    🗑 حذف
+                                </button>
                             </div>
                         ))}
                     </div>

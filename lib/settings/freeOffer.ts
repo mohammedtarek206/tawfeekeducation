@@ -252,5 +252,9 @@ export async function assignFreeSlotAtomically(
         return { assigned: false, reason: 'limit_reached' };
     }
 
+    // Evaluate referral qualification for free offer subscriber
+    const { evaluateReferralForStudent } = await import('@/lib/referrals/processor');
+    await evaluateReferralForStudent(studentId, 'subscription');
+
     return { assigned: true, slotNumber };
 }

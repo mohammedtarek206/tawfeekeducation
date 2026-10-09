@@ -147,52 +147,45 @@ async function handler(
         });
     }
 
+    if (req.method === 'DELETE') {
+        const student = await User.findOne({ _id: studentId, role: 'student' });
+        if (!student) {
+            return NextResponse.json({ success: false, message: 'الطالب غير موجود' }, { status: 404 });
+        }
+
+        await User.findByIdAndDelete(studentId);
+
+        // Cleanup associated records
+        await Promise.allSettled([
+            Referral.deleteMany({ $or: [{ referrer: studentId }, { referred: studentId }] }),
+            Notification.deleteMany({ user: studentId }),
+            import('@/lib/db/models/StudentTask').then(({ default: StudentTask }) => StudentTask.deleteMany({ student: studentId })),
+            import('@/lib/db/models/StudentAchievement').then(({ default: StudentAchievement }) => StudentAchievement.deleteMany({ student: studentId })),
+            import('@/lib/db/models/PointTransaction').then(({ default: PointTransaction }) => PointTransaction.deleteMany({ student: studentId })),
+            import('@/lib/db/models/PaymentRequest').then(({ default: PaymentRequest }) => PaymentRequest.deleteMany({ student: studentId })),
+        ]);
+
+        await createAuditLog({
+            actor: adminUser.userId,
+            actorRole: 'admin',
+            action: (AUDIT_ACTIONS as any).STUDENT_DELETED || 'STUDENT_DELETED',
+            target: studentId,
+            targetModel: 'User',
+            metadata: { name: student.name, phone: student.phone },
+            ipAddress: req.headers.get('x-forwarded-for') || 'unknown',
+        });
+
+        return NextResponse.json({ success: true, message: 'تم حذف الطالب وجميع بياناته المرتبطة بنجاح' });
+    }
+
     return NextResponse.json({ success: false, message: 'طريقة الطلب غير مدعومة' }, { status: 405 });
 }
 
 async function processReferralReward(studentId: string, adminId: string): Promise<void> {
-    const referral = await Referral.findOne({ referred: studentId, status: 'verified' });
-    if (!referral) return;
-
-    // Mark referral as approved
-    await Referral.findByIdAndUpdate(referral._id, { status: 'approved', approvedAt: new Date() });
-
-    // Anti-abuse: check if referrer already got points for this referrer
-    const alreadyRewarded = await Referral.findOne({
-        referrer: referral.referrer,
-        referred: studentId,
-        pointsAwarded: true,
-    });
-    if (alreadyRewarded) return;
-
-    const referralPoints = parseInt(process.env.DEFAULT_REFERRAL_POINTS || '30');
-
-    await awardPoints({
-        studentId: referral.referrer.toString(),
-        amount: referralPoints,
-        type: 'referral',
-        reason: 'مكافأة دعوة طالب جديد',
-        referenceId: referral._id.toString(),
-        referenceType: 'Referral',
-        awardedBy: adminId,
-    });
-
-    await Referral.findByIdAndUpdate(referral._id, {
-        status: 'rewarded',
-        pointsAwarded: true,
-        pointsAmount: referralPoints,
-        rewardedAt: new Date(),
-    });
-
-    await createAuditLog({
-        actor: adminId,
-        actorRole: 'admin',
-        action: AUDIT_ACTIONS.REFERRAL_REWARDED,
-        target: referral.referrer.toString(),
-        targetModel: 'User',
-        metadata: { referredStudent: studentId, points: referralPoints },
-    });
+    const { evaluateReferralForStudent } = await import('@/lib/referrals/processor');
+    await evaluateReferralForStudent(studentId, 'approval', adminId);
 }
 
 export const GET = withAdmin((req, ctx, user) => handler(req, ctx, user));
 export const PATCH = withAdmin((req, ctx, user) => handler(req, ctx, user));
+export const DELETE = withAdmin((req, ctx, user) => handler(req, ctx, user));

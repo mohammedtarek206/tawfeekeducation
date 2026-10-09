@@ -5,12 +5,16 @@ import User from '@/lib/db/models/User';
 import { withStudent } from '@/lib/auth/middleware';
 import { JWTPayload } from '@/lib/auth/jwt';
 
+import { checkStudentAccess } from '@/lib/subscriptions/checkAccess';
+
 // GET /api/student/study-notes
 async function getHandler(req: NextRequest, _ctx: unknown, student: JWTPayload): Promise<NextResponse> {
     await connectDB();
 
-    const studentUser = await User.findById(student.userId).select('grade subscriptionStatus subscriptionEndDate');
+    const studentUser = await User.findById(student.userId).select('grade status subscriptionStatus subscriptionEndDate').lean() as any;
     if (!studentUser) return NextResponse.json({ success: false, message: 'غير مصرح' }, { status: 403 });
+
+    const access = await checkStudentAccess(student.userId, { grade: studentUser.grade });
 
     const filter: Record<string, any> = {
         type: 'notes',
@@ -25,15 +29,17 @@ async function getHandler(req: NextRequest, _ctx: unknown, student: JWTPayload):
         .sort({ createdAt: -1 })
         .lean();
 
-    const isSubscribed = studentUser.subscriptionStatus === 'active' &&
-        (!studentUser.subscriptionEndDate || new Date() <= new Date(studentUser.subscriptionEndDate));
+    const isSubscribed = access.canAccess;
 
     const safeNotes = notes.map((note) => ({
         ...note,
         driveUrl: isSubscribed ? note.driveUrl : null
     }));
 
-    return NextResponse.json({ success: true, data: { notes: safeNotes, requireSubscription: !isSubscribed } });
+    return NextResponse.json({
+        success: true,
+        data: { notes: safeNotes, requireSubscription: !isSubscribed, reason: access.reason }
+    });
 }
 
 export const GET = withStudent(getHandler);

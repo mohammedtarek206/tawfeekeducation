@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { withAdmin } from '@/lib/auth/middleware';
 import { JWTPayload } from '@/lib/auth/jwt';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { parseQuestionsFromText } from '../parse/route';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
@@ -15,7 +16,6 @@ export const POST = withAdmin(async (req: NextRequest, ctx: unknown, admin: JWTP
         }
 
         // Extract Google Drive ID
-        // Supports formats: https://drive.google.com/file/d/FILE_ID/view, https://docs.google.com/document/d/FILE_ID/edit
         const idMatch = url.match(/[-\w]{25,}/);
         if (!idMatch) {
             return NextResponse.json({ success: false, message: 'الرابط لا يحتوي على معرف ملف صالح' }, { status: 400 });
@@ -23,21 +23,23 @@ export const POST = withAdmin(async (req: NextRequest, ctx: unknown, admin: JWTP
         const fileId = idMatch[0];
 
         // Fetch file from Google Drive
-        // Note: For this to work, the file MUST be public ("Anyone with the link").
         const driveUrl = `https://drive.google.com/uc?export=download&id=${fileId}`;
-        const driveRes = await fetch(driveUrl, { method: 'GET' });
+        let driveRes = await fetch(driveUrl, { method: 'GET' });
 
         if (!driveRes.ok) {
-            // It could be a Google Doc, which uses a different export URL
             const docUrl = `https://docs.google.com/document/d/${fileId}/export?format=pdf`;
-            const docRes = await fetch(docUrl, { method: 'GET' });
-            if (!docRes.ok) {
-                return NextResponse.json({ success: false, message: 'لا يمكن الوصول إلى الملف. تأكد أن الملف متاح للرابط (Public).' }, { status: 400 });
+            driveRes = await fetch(docUrl, { method: 'GET' });
+            if (!driveRes.ok) {
+                const txtUrl = `https://docs.google.com/document/d/${fileId}/export?format=txt`;
+                driveRes = await fetch(txtUrl, { method: 'GET' });
             }
-            return await processDriveResponse(docRes, true);
         }
 
-        return await processDriveResponse(driveRes, false);
+        if (!driveRes.ok) {
+            return NextResponse.json({ success: false, message: 'لا يمكن الوصول إلى الملف. تأكد أن الملف متاح للرابط (Public).' }, { status: 400 });
+        }
+
+        return await processDriveResponse(driveRes);
 
     } catch (error: any) {
         console.error('Parse Drive error:', error);
@@ -45,31 +47,42 @@ export const POST = withAdmin(async (req: NextRequest, ctx: unknown, admin: JWTP
     }
 });
 
-async function processDriveResponse(res: Response, isGoogleDocFallback: boolean) {
+async function processDriveResponse(res: Response) {
     const contentType = res.headers.get('content-type') || '';
     const arrayBuffer = await res.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
     let extractedText = '';
-    let parsedData = null;
+    let parsedData: any = null;
 
     try {
         if (contentType.includes('text/plain') || contentType.includes('text/csv')) {
             extractedText = buffer.toString('utf-8');
-            parsedData = await parseWithGeminiText(extractedText);
+            try {
+                parsedData = await parseWithGeminiText(extractedText);
+            } catch (err) {
+                console.warn('Gemini text parse failed, falling back to local parser:', err);
+                parsedData = parseQuestionsFromText(extractedText);
+            }
         } else if (contentType.includes('application/pdf')) {
-            parsedData = await parseWithGeminiFile(buffer, 'application/pdf');
+            try {
+                parsedData = await parseWithGeminiFile(buffer, 'application/pdf');
+            } catch (err) {
+                console.warn('Gemini PDF parse failed:', err);
+                return NextResponse.json({ success: false, message: 'فشل في تحليل ملف PDF عبر الذكاء الاصطناعي. تأكد من إعداد GEMINI_API_KEY أو جرب ملف نصي TXT.' }, { status: 400 });
+            }
         } else {
-            // Assume it's a PDF if nothing else, or use Gemini 1.5 to parse docx generically if supported.
-            // Generative AI API currently supports PDF natively.
-            // Let's just pass it to Gemini as application/pdf and see if it can handle it (since docs export to pdf).
-            // Or if it's an uploaded docx, Gemini 1.5 doesn't natively support docx inline data, but we can try letting it read text or fail.
-            // Actually, we can fetch Google docs as plain text: `export?format=txt`.
-            return NextResponse.json({ success: false, message: 'الملف غير مدعوم أو غير مقروء. يرجى استخدام PDF أو TXT أو Google Docs.' }, { status: 400 });
+            extractedText = buffer.toString('utf-8');
+            const localResults = parseQuestionsFromText(extractedText);
+            if (localResults.length > 0) {
+                parsedData = localResults;
+            } else {
+                return NextResponse.json({ success: false, message: 'الملف غير مدعوم أو غير مقروء. يرجى استخدام PDF أو TXT أو Google Docs.' }, { status: 400 });
+            }
         }
     } catch (error: any) {
-        console.error('Gemini error:', error);
-        return NextResponse.json({ success: false, message: 'فشل في تحليل الملف عبر الذكاء الاصطناعي.' }, { status: 500 });
+        console.error('Drive parse error:', error);
+        return NextResponse.json({ success: false, message: 'حدث خطأ أثناء تحليل الملف.' }, { status: 500 });
     }
 
     if (!parsedData || !Array.isArray(parsedData) || parsedData.length === 0) {
@@ -80,14 +93,13 @@ async function processDriveResponse(res: Response, isGoogleDocFallback: boolean)
     const preview = parsedData.map((q: any, idx: number) => ({
         index: idx,
         text: q.text,
-        answer: q.answer || '',
+        answer: q.answer || q.correctAnswer || '',
         options: q.options || [],
-        correctAnswer: q.correctAnswer || '',
-        type: q.type || 'mcq',
+        correctAnswer: q.correctAnswer || q.answer || '',
+        type: q.type || (q.options?.length > 1 ? 'mcq' : 'short_answer'),
         points: q.points || 1,
-        valid: true,
-        isDuplicate: false, // Could integrate duplicate check here
-        rawSource: q
+        valid: Boolean(q.text && (q.answer || q.correctAnswer || q.options?.length)),
+        isDuplicate: false,
     }));
 
     return NextResponse.json({
@@ -96,8 +108,8 @@ async function processDriveResponse(res: Response, isGoogleDocFallback: boolean)
             preview,
             stats: {
                 total: preview.length,
-                valid: preview.length,
-                invalid: 0,
+                valid: preview.filter((p) => p.valid).length,
+                invalid: preview.filter((p) => !p.valid).length,
                 duplicates: 0,
             }
         }
@@ -110,8 +122,8 @@ const GEMINI_SYSTEM_PROMPT = `
 {
     "text": "نص السؤال",
     "type": "mcq" | "true_false" | "short_answer" | "essay",
-    "options": ["اختيار 1", "اختيار 2", "اختيار 3", "اختيار 4"], // في حالة كان mcq، ولا تكتب أرقام أو حروف للاختيار
-    "correctAnswer": "الاختيار الصحيح بالكامل كما ورد في الاختيارات" // أو "صح" أو "خطأ" لـ true_false، أو الإجابة النموذجية
+    "options": ["اختيار 1", "اختيار 2", "اختيار 3", "اختيار 4"],
+    "correctAnswer": "الاختيار الصحيح بالكامل كما ورد في الاختيارات"
 }
 إذا لم يكن هناك اختيارات، ضع type كـ short_answer.
 يجب ألا تقوم بإرجاع أي شيء آخر سوى المصفوفة كـ JSON صالح (بدون Markdown fences).

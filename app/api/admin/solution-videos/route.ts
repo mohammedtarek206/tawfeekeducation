@@ -19,7 +19,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         const query: any = {};
         if (grade) query.grade = grade;
 
-        const videos = await SolutionVideo.find(query).sort({ createdAt: -1 }).lean();
+        const videos = await SolutionVideo.find(query)
+            .populate('lesson', 'title unit')
+            .sort({ createdAt: -1 })
+            .lean();
 
         return NextResponse.json({ success: true, data: { videos } });
     } catch (error) {
@@ -40,7 +43,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         await connectDB();
 
         const body = await req.json();
-        const { title, description, youtubeUrl, grade, isPublished } = body;
+        const { title, description, youtubeUrl, grade, isPublished, lesson } = body;
 
         if (!title || !youtubeUrl || !grade) {
             return NextResponse.json(
@@ -49,14 +52,20 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
             );
         }
 
-        const video = await SolutionVideo.create({
+        const videoData: any = {
             title,
             description,
             youtubeUrl,
             grade,
             isPublished: isPublished ?? false,
             createdBy: payload.userId,
-        });
+        };
+
+        if (lesson && lesson.trim() !== '') {
+            videoData.lesson = lesson;
+        }
+
+        const video = await SolutionVideo.create(videoData);
 
         return NextResponse.json({ success: true, data: { video } }, { status: 201 });
     } catch (error) {

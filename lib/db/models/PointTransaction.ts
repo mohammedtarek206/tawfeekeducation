@@ -9,7 +9,9 @@ export type TransactionType =
     | 'admin_adjustment'
     | 'streak_bonus'
     | 'lesson_watch'
-    | 'bonus';
+    | 'bonus'
+    | 'task_completion'
+    | 'achievement';
 
 export interface IPointTransaction extends Document {
     student: mongoose.Types.ObjectId;
@@ -39,6 +41,8 @@ const PointTransactionSchema = new Schema<IPointTransaction>(
                 'streak_bonus',
                 'lesson_watch',
                 'bonus',
+                'task_completion',
+                'achievement',
             ],
             required: true,
             index: true,

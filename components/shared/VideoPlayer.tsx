@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { parseVideoUrl } from '@/lib/utils/videoEmbed';
 
 interface VideoPlayerProps {
     src?: string;
@@ -29,8 +30,20 @@ export default function VideoPlayer({
     const containerRef = useRef<HTMLDivElement>(null);
     const [posIndex, setPosIndex] = useState(0);
     const [isFullscreen, setIsFullscreen] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
+    const [hasError, setHasError] = useState(false);
 
-    // Periodically shift watermark position to prevent screen capture cropping
+    // Parse video info using centralized parser
+    const targetUrl = youtubeUrl || src || '';
+    const videoInfo = parseVideoUrl(targetUrl, youtubeId);
+
+    // Reset state on targetUrl / videoId change
+    useEffect(() => {
+        setIsLoading(true);
+        setHasError(false);
+    }, [targetUrl, youtubeId]);
+
+    // Periodically shift watermark position to prevent static screen recording/cropping
     useEffect(() => {
         const interval = setInterval(() => {
             setPosIndex((prev) => (prev + 1) % WATERMARK_POSITIONS.length);
@@ -68,15 +81,6 @@ export default function VideoPlayer({
         }
     };
 
-    // Determine embed URL or video source
-    let finalYoutubeId = youtubeId;
-    if (!finalYoutubeId && youtubeUrl) {
-        const match = youtubeUrl.match(
-            /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/
-        );
-        if (match) finalYoutubeId = match[1];
-    }
-
     const currentPosClass = WATERMARK_POSITIONS[posIndex];
 
     return (
@@ -84,54 +88,60 @@ export default function VideoPlayer({
             ref={containerRef}
             className={`bg-black rounded-2xl overflow-hidden shadow-2xl relative aspect-video border border-gray-800 select-none group/player ${className}`}
         >
-            {/* Video Content */}
-            {finalYoutubeId ? (
-                <iframe
-                    src={`https://www.youtube.com/embed/${finalYoutubeId}?rel=0&modestbranding=1&enablejsapi=1`}
-                    title={title}
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                    allowFullScreen
-                    className="absolute top-0 left-0 w-full h-full border-0"
-                />
-            ) : youtubeUrl && youtubeUrl.includes('drive.google.com') ? (
-                <iframe
-                    src={youtubeUrl.replace(/\/view.*$/, '/preview')}
-                    title={title}
-                    allow="autoplay; encrypted-media"
-                    allowFullScreen
-                    className="absolute top-0 left-0 w-full h-full border-0"
-                />
-            ) : src || (youtubeUrl && (youtubeUrl.endsWith('.mp4') || youtubeUrl.endsWith('.webm'))) ? (
-                <video
-                    src={src || youtubeUrl}
-                    controls
-                    controlsList="nodownload"
-                    className="absolute top-0 left-0 w-full h-full object-contain"
-                />
-            ) : youtubeUrl ? (
-                <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-400 p-6 text-center">
-                    <a
-                        href={youtubeUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="btn-primary"
-                    >
-                        فتح رابط الفيديو الخارجي
-                    </a>
-                </div>
-            ) : (
-                <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-400">
-                    <div className="text-5xl mb-2">🎥</div>
-                    <p>الفيديو غير متوفر</p>
+            {/* Loading Indicator */}
+            {isLoading && !hasError && videoInfo.embedUrl && (
+                <div className="absolute inset-0 bg-black/90 z-20 flex flex-col items-center justify-center text-white space-y-3">
+                    <div className="w-10 h-10 border-4 border-tawfeek-green border-t-transparent rounded-full animate-spin" />
+                    <span className="text-xs font-bold text-gray-300">جاري تحميل مشغل الفيديو...</span>
                 </div>
             )}
+
+            {/* Error / Unavailable Fallback */}
+            {hasError || (!videoInfo.embedUrl && !videoInfo.isDirectFile) ? (
+                <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-400 p-6 text-center bg-black/95 z-20">
+                    <div className="text-5xl mb-3">⚠️</div>
+                    <p className="font-bold text-white text-base mb-1">عذراً، تعذر تشغيل هذا الفيديو</p>
+                    <p className="text-xs text-gray-400 max-w-md">
+                        قد يكون هناك مشكلة في إعدادات خصوصية الفيديو أو تم إزالته من قبل المنشئ.
+                    </p>
+                </div>
+            ) : null}
+
+            {/* Video Content Renderer */}
+            {videoInfo.isDirectFile ? (
+                <video
+                    src={videoInfo.embedUrl || undefined}
+                    controls
+                    controlsList="nodownload"
+                    onLoadedData={() => setIsLoading(false)}
+                    onError={() => {
+                        setIsLoading(false);
+                        setHasError(true);
+                    }}
+                    className="absolute top-0 left-0 w-full h-full object-contain"
+                />
+            ) : videoInfo.embedUrl ? (
+                <iframe
+                    src={videoInfo.embedUrl}
+                    title={title}
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                    allowFullScreen
+                    referrerPolicy="strict-origin-when-cross-origin"
+                    onLoad={() => setIsLoading(false)}
+                    onError={() => {
+                        setIsLoading(false);
+                        setHasError(true);
+                    }}
+                    className="absolute top-0 left-0 w-full h-full border-0"
+                />
+            ) : null}
 
             {/* Moving Student Watermark Overlay */}
             {studentName && (
                 <div
                     className={`absolute ${currentPosClass} transition-all duration-1000 z-30 pointer-events-none opacity-80 group-hover/player:opacity-100`}
                 >
-                    <div className="bg-black/70 backdrop-blur-md text-white text-xs md:text-sm font-extrabold px-3.5 py-1.5 rounded-xl border border-white/20 shadow-2xl flex items-center gap-2">
+                    <div className="bg-black/75 backdrop-blur-md text-white text-xs md:text-sm font-extrabold px-3.5 py-1.5 rounded-xl border border-white/20 shadow-2xl flex items-center gap-2">
                         <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
                         <span className="tracking-wide">الطالب: {studentName}</span>
                     </div>
@@ -141,7 +151,7 @@ export default function VideoPlayer({
             {/* Custom Fullscreen Toggle Button on Container Wrapper */}
             <button
                 onClick={toggleCustomFullscreen}
-                className="absolute bottom-3 left-3 z-30 bg-black/60 hover:bg-black/80 text-white p-2 rounded-lg opacity-0 group-hover/player:opacity-100 transition-opacity backdrop-blur-sm"
+                className="absolute bottom-3 left-3 z-30 bg-black/70 hover:bg-black text-white p-2 rounded-lg opacity-0 group-hover/player:opacity-100 transition-opacity backdrop-blur-sm border border-white/10"
                 title={isFullscreen ? 'الخروج من ملء الشاشة' : 'ملء الشاشة مع العلامة المائية'}
             >
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

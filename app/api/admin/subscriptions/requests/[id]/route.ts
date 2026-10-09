@@ -75,6 +75,10 @@ async function putHandler(req: NextRequest, ctx: any, admin: JWTPayload): Promis
                 title: 'تم قبول طلب الاشتراك 🎉',
                 message: `تم تفعيل اشتراكك في باقة "${plan.name}" بنجاح حتى تاريخ ${endDate.toLocaleDateString('ar-EG')}.`,
             });
+
+            // Evaluate referral qualification (if rule is on_active_subscription or on_first_payment)
+            const { evaluateReferralForStudent } = await import('@/lib/referrals/processor');
+            await evaluateReferralForStudent(student._id.toString(), 'subscription', admin.userId);
         }
     } else if (status === 'rejected') {
         const student = await User.findById(request.studentId);

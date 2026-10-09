@@ -59,6 +59,58 @@ export default function AdminStudentsPage() {
         }
     };
 
+    const handleAdjustPoints = async (id: string, name: string) => {
+        const amountStr = prompt(`تعديل رصيد النقاط للطالب (${name}):\nأدخل عدد النقاط (موجب للإضافة أو سالب للخصم، مثال: 50 أو -20):`);
+        if (!amountStr) return;
+        const amount = parseInt(amountStr, 10);
+        if (isNaN(amount) || amount === 0) {
+            alert('يرجى كتابة عدد نقاط صحيح غير صفر');
+            return;
+        }
+
+        const reason = prompt(`اكتب سبب تعديل النقاط للطالب (${name}):`);
+        if (!reason || reason.trim().length < 3) {
+            alert('السبب مطلوب (3 أحرف على الأقل)');
+            return;
+        }
+
+        try {
+            const res = await fetch(`/api/admin/students/${id}/points`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ amount, reason: reason.trim() })
+            });
+            const result = await res.json();
+            if (result.success) {
+                alert(result.message);
+                loadData();
+            } else {
+                alert(result.message || 'حدث خطأ في تعديل النقاط');
+            }
+        } catch (err) {
+            alert('حدث خطأ في الاتصال بالخادم');
+        }
+    };
+
+    const handleDelete = async (id: string, name: string) => {
+        if (!confirm(`⚠️ تحذير: هل أنت متأكد تماماً من حذف الطالب (${name}) بشكل نهائي؟\nسيتم حذف جميع سجلاته واختباراته وتطبيقاته من النظام ولا يمكن التراجع عن هذا الإجراء.`)) return;
+
+        try {
+            const res = await fetch(`/api/admin/students/${id}`, {
+                method: 'DELETE',
+            });
+            const result = await res.json();
+            if (result.success) {
+                alert(result.message || 'تم حذف الطالب بنجاح');
+                loadData();
+            } else {
+                alert(result.message || 'حدث خطأ في الحذف');
+            }
+        } catch (err) {
+            alert('حدث خطأ في الاتصال بالخادم');
+        }
+    };
+
     return (
         <div className="space-y-6">
             <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
@@ -157,7 +209,18 @@ export default function AdminStudentsPage() {
                                                 <span className="px-2.5 py-1 rounded-md text-xs font-bold bg-gray-100 text-gray-500">لا يوجد</span>
                                             )}
                                         </td>
-                                        <td className="px-6 py-4 font-bold text-tawfeek-gold">{st.points}</td>
+                                        <td className="px-6 py-4 font-bold text-tawfeek-gold">
+                                            <div className="flex items-center gap-2">
+                                                <span>{st.points}</span>
+                                                <button
+                                                    onClick={() => handleAdjustPoints(st._id, st.name)}
+                                                    title="إضافة أو خصم نقاط يدوياً"
+                                                    className="text-xs bg-amber-50 hover:bg-amber-100 text-amber-800 px-2 py-0.5 rounded border border-amber-200 font-bold transition-colors"
+                                                >
+                                                    ✏️ تعديل
+                                                </button>
+                                            </div>
+                                        </td>
                                         <td className="px-6 py-4 text-center">
                                             <div className="flex items-center justify-center gap-2">
                                                 {st.status === 'pending' && (
@@ -180,6 +243,13 @@ export default function AdminStudentsPage() {
                                                         تفعيل
                                                     </button>
                                                 )}
+                                                <button
+                                                    onClick={() => handleDelete(st._id, st.name)}
+                                                    className="text-xs bg-red-50 text-red-600 px-2.5 py-1.5 rounded-lg hover:bg-red-100 font-bold border border-red-200 transition-colors"
+                                                    title="حذف الطالب بشكل نهائي"
+                                                >
+                                                    🗑 حذف
+                                                </button>
                                             </div>
                                         </td>
                                     </tr>

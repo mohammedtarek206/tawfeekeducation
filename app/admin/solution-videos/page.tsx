@@ -9,6 +9,7 @@ type VideoFormData = {
     description: string;
     youtubeUrl: string;
     grade: string;
+    lesson: string;
     isPublished: boolean;
 };
 
@@ -17,6 +18,7 @@ const EMPTY_FORM: VideoFormData = {
     description: '',
     youtubeUrl: '',
     grade: 'first_secondary',
+    lesson: '',
     isPublished: false,
 };
 
@@ -32,6 +34,7 @@ type SolutionVideo = {
     youtubeUrl: string;
     youtubeId?: string;
     grade: string;
+    lesson?: { _id: string; title: string; unit: string } | string;
     isPublished: boolean;
     viewCount: number;
     createdAt: string;
@@ -39,6 +42,7 @@ type SolutionVideo = {
 
 export default function SolutionVideosAdminPage() {
     const [videos, setVideos] = useState<SolutionVideo[]>([]);
+    const [lessonsList, setLessonsList] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
     const [editVideo, setEditVideo] = useState<SolutionVideo | null>(null);
@@ -61,7 +65,22 @@ export default function SolutionVideosAdminPage() {
         }
     }, [filterGrade]);
 
+    const fetchLessons = useCallback(async (selectedGrade: string) => {
+        if (!selectedGrade) return;
+        try {
+            const res = await fetch(`/api/public/lessons?grade=${selectedGrade}`);
+            const data = await res.json();
+            if (data.success) setLessonsList(data.data.lessons || []);
+        } catch {
+            console.error('Failed to fetch lessons');
+        }
+    }, []);
+
     useEffect(() => { fetchVideos(); }, [fetchVideos]);
+
+    useEffect(() => {
+        if (form.grade) fetchLessons(form.grade);
+    }, [form.grade, fetchLessons]);
 
     const openAdd = () => {
         setEditVideo(null);
@@ -72,11 +91,13 @@ export default function SolutionVideosAdminPage() {
 
     const openEdit = (video: SolutionVideo) => {
         setEditVideo(video);
+        const lessonId = typeof video.lesson === 'object' && video.lesson ? video.lesson._id : (video.lesson || '');
         setForm({
             title: video.title,
             description: video.description || '',
             youtubeUrl: video.youtubeUrl,
             grade: video.grade,
+            lesson: lessonId,
             isPublished: video.isPublished,
         });
         setError('');
@@ -318,11 +339,27 @@ export default function SolutionVideosAdminPage() {
                                     <select
                                         required
                                         value={form.grade}
-                                        onChange={e => setForm({ ...form, grade: e.target.value })}
+                                        onChange={e => setForm({ ...form, grade: e.target.value, lesson: '' })}
                                         className="w-full border border-gray-200 bg-gray-50 rounded-xl px-4 py-3 outline-none focus:border-tawfeek-green transition-all"
                                     >
                                         {GRADES.map(g => (
                                             <option key={g.value} value={g.value}>{g.label}</option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-bold text-gray-700 mb-1.5">الحصة / الدرس المرتبط (اختياري)</label>
+                                    <select
+                                        value={form.lesson}
+                                        onChange={e => setForm({ ...form, lesson: e.target.value })}
+                                        className="w-full border border-gray-200 bg-gray-50 rounded-xl px-4 py-3 outline-none focus:border-tawfeek-green transition-all"
+                                    >
+                                        <option value="">بدون ربط (فيديو حل عام)</option>
+                                        {lessonsList.map(l => (
+                                            <option key={l._id} value={l._id}>
+                                                {l.title} ({l.unit || 'بدون وحدة'})
+                                            </option>
                                         ))}
                                     </select>
                                 </div>

@@ -26,100 +26,75 @@ export interface AwardPointsResult {
 export async function awardPoints(options: AwardPointsOptions): Promise<AwardPointsResult> {
     await connectDB();
 
-    const session = await mongoose.startSession();
-    session.startTransaction();
+    const student = await User.findById(options.studentId).select('points level role status');
+    if (!student) {
+        return { success: false, newBalance: 0, error: 'Student not found' };
+    }
+
+    if (student.role !== 'student' || student.status !== 'approved') {
+        return { success: false, newBalance: 0, error: 'Invalid student' };
+    }
+
+    const newBalance = Math.max(0, student.points + options.amount);
 
     try {
-        const student = await User.findById(options.studentId)
-            .select('points level role status')
-            .session(session);
-
-        if (!student) {
-            await session.abortTransaction();
-            return { success: false, newBalance: 0, error: 'Student not found' };
-        }
-
-        if (student.role !== 'student' || student.status !== 'approved') {
-            await session.abortTransaction();
-            return { success: false, newBalance: 0, error: 'Invalid student' };
-        }
-
-        const newBalance = Math.max(0, student.points + options.amount);
-
-        await User.findByIdAndUpdate(
+        // Try atomic update
+        const updated = await User.findByIdAndUpdate(
             options.studentId,
             { $inc: { points: options.amount } },
-            { session }
+            { new: true }
         );
 
-        await PointTransaction.create(
-            [
-                {
-                    student: options.studentId,
-                    amount: options.amount,
-                    type: options.type,
-                    reason: options.reason,
-                    referenceId: options.referenceId,
-                    referenceType: options.referenceType,
-                    balanceAfter: newBalance,
-                    createdBy: options.awardedBy,
-                },
-            ],
-            { session }
-        );
+        const currentBalance = updated ? updated.points : newBalance;
+
+        // Record transaction
+        await PointTransaction.create({
+            student: options.studentId,
+            amount: options.amount,
+            type: options.type,
+            reason: options.reason,
+            referenceId: options.referenceId,
+            referenceType: options.referenceType,
+            balanceAfter: currentBalance,
+            createdBy: options.awardedBy,
+        });
 
         // Check level up
-        const oldLevel = student.level;
-        const newLevel = await calculateLevel(newBalance);
+        const oldLevel = student.level || 1;
+        const newLevel = await calculateLevel(currentBalance);
         let didLevelUp = false;
 
         if (newLevel > oldLevel) {
-            await User.findByIdAndUpdate(options.studentId, { level: newLevel }, { session });
+            await User.findByIdAndUpdate(options.studentId, { level: newLevel });
             didLevelUp = true;
 
-            // Send level up notification
-            await Notification.create(
-                [
-                    {
-                        user: options.studentId,
-                        type: 'general',
-                        title: 'تهانينا! ارتقيت مستوى',
-                        message: `لقد وصلت إلى المستوى ${newLevel}! استمر في التقدم.`,
-                    },
-                ],
-                { session }
-            );
+            await Notification.create({
+                user: options.studentId,
+                type: 'general',
+                title: 'تهانينا! ارتقيت مستوى',
+                message: `لقد وصلت إلى المستوى ${newLevel}! استمر في التقدم.`,
+            });
         }
 
         // Send points notification
         if (options.amount > 0) {
-            await Notification.create(
-                [
-                    {
-                        user: options.studentId,
-                        type: 'points_earned',
-                        title: 'نقاط جديدة!',
-                        message: `حصلت على ${options.amount} نقطة - ${options.reason}`,
-                    },
-                ],
-                { session }
-            );
+            await Notification.create({
+                user: options.studentId,
+                type: 'points_earned',
+                title: 'نقاط جديدة!',
+                message: `حصلت على ${options.amount} نقطة - ${options.reason}`,
+            });
         }
-
-        await session.commitTransaction();
 
         return {
             success: true,
-            newBalance,
+            newBalance: currentBalance,
             levelUp: didLevelUp,
             newLevel: didLevelUp ? newLevel : undefined,
         };
     } catch (error) {
-        await session.abortTransaction();
         console.error('Award points error:', error);
-        return { success: false, newBalance: 0, error: 'Failed to award points' };
-    } finally {
-        session.endSession();
+        return { success: false, newBalance: student.points, error: 'Failed to award points' };
     }
 }
 

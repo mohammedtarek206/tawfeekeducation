@@ -23,6 +23,7 @@ function RegisterForm() {
     const searchParams = useSearchParams();
     const planId = searchParams.get('planId');
     const callbackUrl = searchParams.get('callbackUrl');
+    const urlRefCode = searchParams.get('ref') || searchParams.get('referralCode') || '';
 
     const [role, setRole] = useState<RegisterRole>('student');
     const [step, setStep] = useState(1);
@@ -39,6 +40,13 @@ function RegisterForm() {
         grade: '',
         governorate: '',
         referralCode: '',
+    });
+
+    // Populate referral code from URL searchParams
+    useState(() => {
+        if (urlRefCode) {
+            setForm((prev) => ({ ...prev, referralCode: urlRefCode.toUpperCase() }));
+        }
     });
 
     const handleChange = (field: string, value: string) => {

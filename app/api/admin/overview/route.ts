@@ -41,6 +41,7 @@ async function handler(req: NextRequest): Promise<NextResponse> {
         rewardedReferrals,
         totalParents,
         pointsAgg,
+        userPointsAgg,
     ] = await Promise.all([
         User.countDocuments({ role: 'student' }),
         User.countDocuments({ role: 'student', status: 'approved' }),
@@ -63,11 +64,13 @@ async function handler(req: NextRequest): Promise<NextResponse> {
         Referral.countDocuments({}),
         Referral.countDocuments({ status: 'rewarded' }),
         User.countDocuments({ role: 'parent' }),
-        PointTransaction.aggregate([{ $group: { _id: null, total: { $sum: '$amount' } } }]),
+        PointTransaction.aggregate([{ $match: { amount: { $gt: 0 } } }, { $group: { _id: null, total: { $sum: '$amount' } } }]),
+        User.aggregate([{ $match: { role: 'student' } }, { $group: { _id: null, total: { $sum: '$points' } } }]),
     ]);
 
-
-    const totalPointsAwarded = pointsAgg[0]?.total || 0;
+    const txPoints = pointsAgg[0]?.total || 0;
+    const userPoints = userPointsAgg[0]?.total || 0;
+    const totalPointsAwarded = Math.max(txPoints, userPoints);
 
     // Recent registrations for chart (last 7 days)
     const last7Days = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);

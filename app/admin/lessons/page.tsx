@@ -275,7 +275,7 @@ export default function AdminLessonsPage() {
                             </div>
                             <div className="h-40 bg-gray-100 relative">
                                 {lesson.youtubeId ? (
-                                    <iframe src={`https://www.youtube.com/embed/${lesson.youtubeId}?rel=0&modestbranding=1`} className="w-full h-full border-0" allowFullScreen />
+                                    <iframe src={`https://www.youtube.com/embed/${lesson.youtubeId}?rel=0&playsinline=1&controls=1`} className="w-full h-full border-0" allowFullScreen />
                                 ) : lesson.thumbnail ? (
                                     <img src={lesson.thumbnail} alt="" className="w-full h-full object-cover" />
                                 ) : (

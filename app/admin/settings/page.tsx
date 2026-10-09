@@ -367,9 +367,95 @@ export default function AdminSettingsPage() {
 
                     {/* SECTION 2: GAMIFICATION & POINTS SETTINGS */}
                     <div className="bg-white rounded-3xl border border-earth/40 shadow-sm p-6 md:p-8">
-                        <h2 className="text-2xl font-black text-forest border-b pb-4 mb-6">إعدادات النقاط والمكافآت (Points & Gamification)</h2>
+                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-gray-100 pb-6 mb-6">
+                            <div>
+                                <span className="bg-amber-100 text-amber-800 text-xs font-bold px-3 py-1 rounded-full">نظام النقاط والإحالات</span>
+                                <h2 className="text-2xl font-black text-forest mt-2">إعدادات النقاط والمكافآت (Points & Referrals System)</h2>
+                                <p className="text-gray-500 text-sm mt-1">التحكم في تفعيل الدعوات، شروط استحقاق النقاط، وقيمة المكافآت</p>
+                            </div>
+                            <Link href="/admin/referrals" className="px-4 py-2 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 text-xs font-bold rounded-xl shrink-0 transition-colors">
+                                لوحة الإحالات والإحصائيات ←
+                            </Link>
+                        </div>
 
+                        {/* Referral System Main Controls */}
+                        <div className="space-y-6 mb-8 bg-offwhite/60 p-6 rounded-2xl border border-earth/30">
+                            <h3 className="font-bold text-forest text-base flex items-center gap-2 mb-4">
+                                🔗 إعدادات شروط الإحالة والدعوات
+                            </h3>
+
+                            {/* Referral Enabled Toggle */}
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-2xl border border-gray-200 bg-white">
+                                <div>
+                                    <div className="font-bold text-gray-900 text-base">تفعيل نظام دعوة الأصدقاء (Referral System)</div>
+                                    <div className="text-sm text-gray-500 mt-1">عند الإيقاف، لن يتم احتساب أي نقاط دعوة جديدة للطلاب</div>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <label className="relative inline-flex items-center cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={Boolean(getValue('referral_enabled', true))}
+                                            onChange={e => handleChange('referral_enabled', e.target.checked)}
+                                            className="sr-only peer"
+                                        />
+                                        <div className="w-14 h-7 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:start-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-forest"></div>
+                                    </label>
+                                    <span className="font-bold text-sm text-gray-700">
+                                        {Boolean(getValue('referral_enabled', true)) ? 'مفعّل ON' : 'معطّل OFF'}
+                                    </span>
+                                </div>
+                            </div>
+
+                            {/* Qualification Rule Selection */}
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-2xl border border-gray-200 bg-white">
+                                <div>
+                                    <div className="font-bold text-gray-900 text-base">شرط استحقاق مكافأة الدعوة (Qualification Rule)</div>
+                                    <div className="text-sm text-gray-500 mt-1">متى يتم منح النقاط للطالب الداعي؟</div>
+                                </div>
+                                <div className="sm:w-80">
+                                    <select
+                                        value={getValue('referral_qualification_rule', 'on_approval')}
+                                        onChange={e => handleChange('referral_qualification_rule', e.target.value)}
+                                        className="input-field font-bold text-sm"
+                                    >
+                                        <option value="on_approval">فور موافقة الإدارة على الطالب المدعُو</option>
+                                        <option value="on_active_subscription">عند تفعيل اشتراك/عرض للطالب المدعُو</option>
+                                        <option value="on_first_payment">عند اعتماد أول عملية دفع مدفوعة من الطالب</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            {/* Free Offer qualifies for referral toggle */}
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-2xl border border-gray-200 bg-white">
+                                <div>
+                                    <div className="font-bold text-gray-900 text-base">احتساب الطلاب المجانيين كـ "اشتراك فعال"</div>
+                                    <div className="text-sm text-gray-500 mt-1">إذا كان شرط الاستحقاق "عند الاشتراك"، هل يمنح العرض المجاني النقاط للداعي؟</div>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <label className="relative inline-flex items-center cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={Boolean(getValue('referral_free_offer_qualifies', true))}
+                                            onChange={e => handleChange('referral_free_offer_qualifies', e.target.checked)}
+                                            className="sr-only peer"
+                                        />
+                                        <div className="w-14 h-7 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:start-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-forest"></div>
+                                    </label>
+                                    <span className="font-bold text-sm text-gray-700">
+                                        {Boolean(getValue('referral_free_offer_qualifies', true)) ? 'نعم (مفعّل)' : 'لا'}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* General Gamification Settings */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <GamificationSettingItem
+                                label="نقاط إحالة طالب جديد (مكافأة الداعي)"
+                                desc="عدد النقاط التي يكتسبها الطالب عند نجاح دعوة صديقه"
+                                value={getValue('referral_points', 50)}
+                                onChange={val => handleChange('referral_points', val)}
+                            />
                             <GamificationSettingItem
                                 label="نقاط مشاهدة الحصة"
                                 desc="النقاط الممنوحة للطالب عند مشاهدة فيديو الحصة"
@@ -399,12 +485,6 @@ export default function AdminSettingsPage() {
                                 desc="النقاط الممنوحة عند اجتياز الامتحان الشهري"
                                 value={getValue('monthly_exam_points', 100)}
                                 onChange={val => handleChange('monthly_exam_points', val)}
-                            />
-                            <GamificationSettingItem
-                                label="نقاط إحالة طالب جديد"
-                                desc="مكافأة الداعي عند موافقة الإدارة على الطالب"
-                                value={getValue('referral_points', 30)}
-                                onChange={val => handleChange('referral_points', val)}
                             />
                         </div>
                     </div>

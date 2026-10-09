@@ -1,6 +1,6 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
-export type ReferralStatus = 'pending' | 'verified' | 'approved' | 'rewarded' | 'rejected';
+export type ReferralStatus = 'pending' | 'verified' | 'approved' | 'qualified' | 'rewarded' | 'rejected';
 
 export interface IReferral extends Document {
     referrer: mongoose.Types.ObjectId;
@@ -11,6 +11,7 @@ export interface IReferral extends Document {
     pointsAmount: number;
     rejectionReason?: string;
     approvedAt?: Date;
+    qualifiedAt?: Date;
     rewardedAt?: Date;
     createdAt: Date;
 }
@@ -22,7 +23,7 @@ const ReferralSchema = new Schema<IReferral>(
         code: { type: String, required: true, index: true },
         status: {
             type: String,
-            enum: ['pending', 'verified', 'approved', 'rewarded', 'rejected'],
+            enum: ['pending', 'verified', 'approved', 'qualified', 'rewarded', 'rejected'],
             default: 'pending',
             index: true,
         },
@@ -30,6 +31,7 @@ const ReferralSchema = new Schema<IReferral>(
         pointsAmount: { type: Number, default: 0 },
         rejectionReason: { type: String },
         approvedAt: { type: Date },
+        qualifiedAt: { type: Date },
         rewardedAt: { type: Date },
     },
     { timestamps: true }

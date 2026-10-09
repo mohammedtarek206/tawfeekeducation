@@ -28,6 +28,22 @@ export default function AdminParentsPage() {
         fetchParents();
     }, [search]);
 
+    const handleDelete = async (id: string, name: string) => {
+        if (!confirm(`هل أنت متأكد من حذف حساب ولي الأمر (${name})؟`)) return;
+        try {
+            const res = await fetch(`/api/admin/parents/${id}`, { method: 'DELETE' });
+            const data = await res.json();
+            if (data.success) {
+                alert(data.message || 'تم الحذف بنجاح');
+                fetchParents();
+            } else {
+                alert(data.message || 'فشل الحذف');
+            }
+        } catch {
+            alert('حدث خطأ في الاتصال بالخادم');
+        }
+    };
+
     return (
         <div className="space-y-6">
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white p-6 rounded-2xl shadow-sm border border-earth/30">
@@ -61,6 +77,7 @@ export default function AdminParentsPage() {
                                     <th className="px-6 py-4 font-bold text-gray-700 text-sm">الهاتف</th>
                                     <th className="px-6 py-4 font-bold text-gray-700 text-sm">الطلاب المرتبطين</th>
                                     <th className="px-6 py-4 font-bold text-gray-700 text-sm">أنشئ في</th>
+                                    <th className="px-6 py-4 font-bold text-gray-700 text-sm text-center">إجراءات</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100">
@@ -92,7 +109,15 @@ export default function AdminParentsPage() {
                                         <td className="px-6 py-4 text-gray-500 text-sm" suppressHydrationWarning>
                                             {formatDate(parent.createdAt)}
                                         </td>
-
+                                        <td className="px-6 py-4 text-center">
+                                            <button
+                                                onClick={() => handleDelete(parent._id, parent.name)}
+                                                className="text-xs bg-red-50 text-red-600 px-3 py-1.5 rounded-lg hover:bg-red-100 font-bold border border-red-200 transition-colors"
+                                                title="حذف حساب ولي الأمر"
+                                            >
+                                                🗑 حذف
+                                            </button>
+                                        </td>
                                     </tr>
                                 ))}
                             </tbody>
