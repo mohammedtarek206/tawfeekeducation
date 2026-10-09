@@ -13,7 +13,7 @@ import { JWTPayload } from '@/lib/auth/jwt';
  *   س١ - السؤال / ج - الإجابة
  *   السؤال بدون prefix / الإجابة تحته مباشرة
  */
-export interface ParsedItem {
+interface ParsedItem {
     text: string;
     answer: string;
     options: string[];
@@ -23,7 +23,7 @@ export interface ParsedItem {
     error?: string;
 }
 
-export function parseQuestionsFromText(raw: string): ParsedItem[] {
+function parseQuestionsFromText(raw: string): ParsedItem[] {
     const results: ParsedItem[] = [];
 
     // Normalize newlines
