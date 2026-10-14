@@ -10,6 +10,7 @@ const LINKS = [
     { href: '/admin/tasks', label: 'إدارة المهام', icon: '🎯' },
     { href: '/admin/achievements', label: 'إدارة الإنجازات', icon: '🏆' },
     { href: '/admin/student-mistakes', label: 'أخطاء الطلاب', icon: '🔍' },
+    { href: '/admin/honor-board', label: 'لوحة الشرف', icon: '🏆' },
     { href: '/admin/subscriptions/plans', label: 'الباقات والاشتراكات', icon: '📦' },
     { href: '/admin/subscriptions/requests', label: 'طلبات الاشتراك', icon: '💳' },
     { href: '/admin/subscriptions/payment-methods', label: 'طرق الدفع', icon: '💵' },
