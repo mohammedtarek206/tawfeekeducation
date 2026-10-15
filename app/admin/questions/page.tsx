@@ -95,8 +95,21 @@ export default function AdminQuestionsPage() {
 
     const handleDelete = async (id: string) => {
         if (!confirm('هل أنت متأكد من حذف هذا السؤال؟')) return;
-        await fetch(`/api/admin/questions/${id}`, { method: 'DELETE' });
-        load();
+        try {
+            const res = await fetch(`/api/admin/questions/${id}`, { method: 'DELETE' });
+            const data = await res.json();
+            if (data.success) {
+                setSuccess('تم حذف السؤال بنجاح ✅');
+                setTimeout(() => setSuccess(''), 3000);
+                load();
+            } else {
+                setError(data.message || 'حدث خطأ أثناء الحذف');
+                setTimeout(() => setError(''), 5000);
+            }
+        } catch {
+            setError('حدث خطأ في الاتصال بالخادم');
+            setTimeout(() => setError(''), 5000);
+        }
     };
 
     return (
@@ -234,7 +247,7 @@ export default function AdminQuestionsPage() {
                                             {q.text}
                                         </p>
                                         <div className="grid grid-cols-2 gap-1 mb-3">
-                                            {q.options?.map((opt: any, oi: number) => (
+                                            {q.choices?.map((opt: any, oi: number) => (
                                                 <div key={oi} className={`text-sm px-3 py-1.5 rounded-lg ${opt.isCorrect ? 'bg-green-100 text-green-800 font-bold' : 'bg-gray-50 text-gray-600'}`}>
                                                     {opt.isCorrect ? '✓ ' : ''}{opt.text}
                                                 </div>

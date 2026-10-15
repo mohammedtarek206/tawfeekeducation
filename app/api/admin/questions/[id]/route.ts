@@ -8,34 +8,45 @@ import mongoose from 'mongoose';
 // DELETE /api/admin/questions/[id]
 async function deleteHandler(
     req: NextRequest,
-    context: { params: { id: string } },
+    context: any,
     _admin: JWTPayload
 ): Promise<NextResponse> {
-    await connectDB();
+    try {
+        await connectDB();
 
-    const { id } = context.params;
+        // Extract ID from URL path directly (reliable across Next.js versions)
+        const url = new URL(req.url);
+        const pathParts = url.pathname.split('/');
+        const id = pathParts[pathParts.length - 1];
 
-    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+        if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+            return NextResponse.json(
+                { success: false, message: 'معرف السؤال غير صالح' },
+                { status: 400 }
+            );
+        }
+
+        const question = await Question.findById(id);
+        if (!question) {
+            return NextResponse.json(
+                { success: false, message: 'السؤال غير موجود' },
+                { status: 404 }
+            );
+        }
+
+        await Question.findByIdAndDelete(id);
+
+        return NextResponse.json({
+            success: true,
+            message: 'تم حذف السؤال بنجاح',
+        });
+    } catch (err) {
+        console.error('Error deleting question:', err);
         return NextResponse.json(
-            { success: false, message: 'معرف السؤال غير صالح' },
-            { status: 400 }
+            { success: false, message: 'حدث خطأ أثناء حذف السؤال' },
+            { status: 500 }
         );
     }
-
-    const question = await Question.findById(id);
-    if (!question) {
-        return NextResponse.json(
-            { success: false, message: 'السؤال غير موجود' },
-            { status: 404 }
-        );
-    }
-
-    await Question.findByIdAndDelete(id);
-
-    return NextResponse.json({
-        success: true,
-        message: 'تم حذف السؤال بنجاح',
-    });
 }
 
 export const DELETE = withAdmin(deleteHandler);

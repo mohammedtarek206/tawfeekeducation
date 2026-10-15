@@ -28,125 +28,141 @@ function detectDuplicates(
 
 // POST /api/admin/questions/parse — parse text and return preview
 async function parseHandler(req: NextRequest, _ctx: unknown, _admin: JWTPayload): Promise<NextResponse> {
-    await connectDB();
-    const body = await req.json();
-    const { text } = body;
+    try {
+        await connectDB();
+        const body = await req.json();
+        const { text } = body;
 
-    if (!text || typeof text !== 'string' || text.trim().length < 5) {
-        return NextResponse.json({ success: false, message: 'النص فارغ أو قصير جداً' }, { status: 400 });
-    }
+        if (!text || typeof text !== 'string' || text.trim().length < 5) {
+            return NextResponse.json({ success: false, message: 'النص فارغ أو قصير جداً' }, { status: 400 });
+        }
 
-    const parsed = parseQuestionsFromText(text);
+        const parsed = parseQuestionsFromText(text);
 
-    if (!parsed.length) {
+        if (!parsed.length) {
+            return NextResponse.json(
+                { success: false, message: 'لم يتم التعرف على أي أسئلة. تأكد من الصيغة: "س: السؤال" و"ج: الإجابة"' },
+                { status: 400 }
+            );
+        }
+
+        // Check for duplicates against existing DB
+        let existingQuestions: Array<{ text: string }> = [];
+        try {
+            const textQueries = parsed.map((p) => p.text.substring(0, 30));
+            existingQuestions = await Question.find({
+                text: { $regex: textQueries.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), $options: 'i' },
+            }).select('text').lean() as Array<{ text: string }>;
+        } catch {
+            // If duplicate detection fails, continue without it
+            existingQuestions = [];
+        }
+
+        const duplicateIndices = detectDuplicates(parsed, existingQuestions);
+
+        const preview = parsed.map((p, idx) => ({
+            ...p,
+            isDuplicate: duplicateIndices.has(idx),
+            index: idx,
+        }));
+
+        return NextResponse.json({
+            success: true,
+            data: {
+                preview,
+                stats: {
+                    total: parsed.length,
+                    valid: parsed.filter((p) => p.valid).length,
+                    invalid: parsed.filter((p) => !p.valid).length,
+                    duplicates: duplicateIndices.size,
+                },
+            },
+        });
+    } catch (err) {
+        console.error('Parse error:', err);
         return NextResponse.json(
-            { success: false, message: 'لم يتم التعرف على أي أسئلة. تأكد من الصيغة: "س: السؤال" و"ج: الإجابة"' },
-            { status: 400 }
+            { success: false, message: 'حدث خطأ أثناء تحليل النص' },
+            { status: 500 }
         );
     }
-
-    // Check for duplicates against existing DB
-    const existingQuestions = await Question.find({
-        text: { $in: parsed.map((p) => ({ $regex: p.text.substring(0, 30), $options: 'i' })) },
-    }).select('text').lean();
-
-    const duplicateIndices = detectDuplicates(parsed, existingQuestions as Array<{ text: string }>);
-
-    const preview = parsed.map((p, idx) => ({
-        ...p,
-        isDuplicate: duplicateIndices.has(idx),
-        index: idx,
-    }));
-
-    return NextResponse.json({
-        success: true,
-        data: {
-            preview,
-            stats: {
-                total: parsed.length,
-                valid: parsed.filter((p) => p.valid).length,
-                invalid: parsed.filter((p) => !p.valid).length,
-                duplicates: duplicateIndices.size,
-            },
-        },
-    });
 }
 
 // POST /api/admin/questions/import — save parsed questions to DB
 async function importHandler(req: NextRequest, _ctx: unknown, admin: JWTPayload): Promise<NextResponse> {
-    await connectDB();
-    const body = await req.json();
-    const { questions, grade, subject, difficulty } = body;
+    try {
+        await connectDB();
+        const body = await req.json();
+        const { questions, grade, subject, difficulty } = body;
 
-    if (!questions || !Array.isArray(questions) || !questions.length) {
-        return NextResponse.json({ success: false, message: 'لا توجد أسئلة للاستيراد' }, { status: 400 });
-    }
-    if (!grade) return NextResponse.json({ success: false, message: 'يرجى تحديد الصف' }, { status: 400 });
-    if (!subject) return NextResponse.json({ success: false, message: 'يرجى تحديد المادة' }, { status: 400 });
+        if (!questions || !Array.isArray(questions) || !questions.length) {
+            return NextResponse.json({ success: false, message: 'لا توجد أسئلة للاستيراد' }, { status: 400 });
+        }
+        if (!grade) return NextResponse.json({ success: false, message: 'يرجى تحديد الصف' }, { status: 400 });
+        if (!subject) return NextResponse.json({ success: false, message: 'يرجى تحديد المادة' }, { status: 400 });
 
-    const toInsert = questions
-        .filter((q: any) => !q.skip && q.text)
-        .map((q: any) => {
-            let parsedChoices = [];
-            let qType = q.type || 'true_false';
+        const toInsert = questions
+            .filter((q: any) => !q.skip && q.text && q.text.trim())
+            .map((q: any) => {
+                let parsedChoices = [];
+                // Force type to be only 'mcq' or 'true_false' (the only types the Question model accepts)
+                let qType: 'mcq' | 'true_false' = 'true_false';
 
-            if (q.type === 'mcq' && Array.isArray(q.options) && q.options.length > 0) {
-                // Determine correctAnswer
-                const correctAnswer = q.correctAnswer || q.answer || '';
-                parsedChoices = q.options.map((opt: string) => ({
-                    text: opt.trim(),
-                    isCorrect: opt.trim() === correctAnswer.trim()
-                }));
-                // Fallback if no correct option found
-                if (!parsedChoices.some((c: any) => c.isCorrect) && parsedChoices.length > 0) {
-                    parsedChoices[0].isCorrect = true;
+                if (q.type === 'mcq' && Array.isArray(q.options) && q.options.length >= 2) {
+                    qType = 'mcq';
+                    const correctAnswer = (q.correctAnswer || q.answer || '').trim();
+                    parsedChoices = q.options.map((opt: string) => ({
+                        text: typeof opt === 'string' ? opt.trim() : String(opt),
+                        isCorrect: typeof opt === 'string' && opt.trim() === correctAnswer
+                    }));
+                    // If no correct answer matched, mark the first as correct
+                    if (!parsedChoices.some((c: any) => c.isCorrect) && parsedChoices.length > 0) {
+                        parsedChoices[0].isCorrect = true;
+                    }
+                } else {
+                    // Default: true_false for everything else
+                    qType = 'true_false';
+                    const answer = (q.correctAnswer || q.answer || '').trim();
+                    const isCorrect = answer === 'صح' || answer.toLowerCase() === 'true' || answer === 'صحيح';
+                    parsedChoices = [
+                        { text: 'صح', isCorrect: isCorrect },
+                        { text: 'خطأ', isCorrect: !isCorrect }
+                    ];
                 }
-            } else if (q.type === 'true_false') {
-                const isCorrect = q.correctAnswer === 'صح' || q.correctAnswer === 'True' || q.correctAnswer === 'true' || q.answer === 'صح';
-                parsedChoices = [
-                    { text: 'صح', isCorrect: isCorrect },
-                    { text: 'خطأ', isCorrect: !isCorrect }
-                ];
-            } else if (q.type === 'short_answer' || q.type === 'essay') {
-                parsedChoices = [
-                    { text: (q.correctAnswer || q.answer).trim(), isCorrect: true }
-                ];
-            } else {
-                // Fallback for manual (old) parser
-                parsedChoices = [
-                    { text: q.answer ? q.answer.trim() : 'الإجابة', isCorrect: true },
-                    { text: 'إجابة خاطئة', isCorrect: false },
-                ];
-                qType = 'true_false';
-            }
 
-            return {
-                text: q.text.trim(),
-                type: qType,
-                choices: parsedChoices,
-                difficulty: difficulty || 'medium',
-                subject,
-                grade,
-                isActive: true,
-                usageCount: 0,
-                order: 0,
-                points: q.points || 1,
-                tags: [],
-                createdBy: admin.userId,
-            };
+                return {
+                    text: q.text.trim(),
+                    type: qType,
+                    choices: parsedChoices,
+                    difficulty: difficulty || 'medium',
+                    subject,
+                    grade,
+                    isActive: true,
+                    usageCount: 0,
+                    order: 0,
+                    points: q.points || 1,
+                    tags: [],
+                    createdBy: admin.userId,
+                };
+            });
+
+        if (!toInsert.length) {
+            return NextResponse.json({ success: false, message: 'لا توجد أسئلة صالحة بعد الفلترة' }, { status: 400 });
+        }
+
+        const inserted = await Question.insertMany(toInsert);
+
+        return NextResponse.json({
+            success: true,
+            message: `تم استيراد ${inserted.length} سؤال بنجاح`,
+            data: { count: inserted.length },
         });
-
-    if (!toInsert.length) {
-        return NextResponse.json({ success: false, message: 'لا توجد أسئلة صالحة بعد الفلترة' }, { status: 400 });
+    } catch (err) {
+        console.error('Import error:', err);
+        return NextResponse.json(
+            { success: false, message: 'حدث خطأ أثناء حفظ الأسئلة في قاعدة البيانات' },
+            { status: 500 }
+        );
     }
-
-    const inserted = await Question.insertMany(toInsert);
-
-    return NextResponse.json({
-        success: true,
-        message: `تم استيراد ${inserted.length} سؤال بنجاح`,
-        data: { count: inserted.length },
-    });
 }
 
 // Route dispatch
