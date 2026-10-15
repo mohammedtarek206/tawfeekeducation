@@ -2,6 +2,7 @@
 import connectDB from '@/lib/db/connect';
 import User from '@/lib/db/models/User';
 import { withAdmin } from '@/lib/auth/middleware';
+import { JWTPayload } from '@/lib/auth/jwt';
 import { getFreeOfferStats } from '@/lib/settings/freeOffer';
 
 export const revalidate = 0;

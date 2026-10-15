@@ -4,6 +4,7 @@ import ExamAttempt from '@/lib/db/models/ExamAttempt';
 import Question from '@/lib/db/models/Question';
 import User from '@/lib/db/models/User';
 import { withAdmin } from '@/lib/auth/middleware';
+import { JWTPayload } from '@/lib/auth/jwt';
 
 async function getHandler(req: NextRequest, _ctx: unknown, _admin: JWTPayload): Promise<NextResponse> {
     await connectDB();

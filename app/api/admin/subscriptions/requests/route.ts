@@ -2,6 +2,7 @@
 import connectDB from '@/lib/db/connect';
 import PaymentRequest from '@/lib/db/models/PaymentRequest';
 import { withAdmin } from '@/lib/auth/middleware';
+import { JWTPayload } from '@/lib/auth/jwt';
 
 // GET /api/admin/subscriptions/requests
 async function getHandler(req: NextRequest, _ctx: unknown, _admin: JWTPayload): Promise<NextResponse> {

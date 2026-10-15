@@ -2,6 +2,7 @@
 import connectDB from '@/lib/db/connect';
 import PaymentMethod from '@/lib/db/models/PaymentMethod';
 import { withAdmin } from '@/lib/auth/middleware';
+import { JWTPayload } from '@/lib/auth/jwt';
 import { paymentMethodSchema } from '@/lib/validation/schemas';
 
 // GET /api/admin/subscriptions/payment-methods
