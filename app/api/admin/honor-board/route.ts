@@ -3,22 +3,29 @@ import connectDB from '@/lib/db/connect';
 import ExamAttempt from '@/lib/db/models/ExamAttempt';
 import User from '@/lib/db/models/User';
 import { withAdmin } from '@/lib/auth/middleware';
+import { JWTPayload } from '@/lib/auth/jwt';
 
-async function getHandler(req: NextRequest): Promise<NextResponse> {
+// Must match withAdmin signature: (req, context, user) => Promise<NextResponse>
+async function getHandler(
+    req: NextRequest,
+    _context: unknown,
+    _admin: JWTPayload
+): Promise<NextResponse> {
     try {
         await connectDB();
 
         const { searchParams } = new URL(req.url);
         const grade = searchParams.get('grade')?.trim() || '';
-        const topN = Math.min(50, Math.max(5, parseInt(searchParams.get('limit') || '10', 10)));
+        const limitParam = parseInt(searchParams.get('limit') || '10', 10);
+        const topN = Math.min(50, Math.max(5, isNaN(limitParam) ? 10 : limitParam));
 
-        // Build student filter: only students with approved status
+        // 1. Find approved students
         const studentFilter: Record<string, unknown> = { role: 'student', status: 'approved' };
         if (grade) studentFilter.grade = grade;
 
         const students = await User.find(studentFilter)
             .select('_id name grade')
-            .lean();
+            .lean() as unknown as Array<{ _id: { toString(): string }; name: string; grade?: string }>;
 
         if (!students.length) {
             return NextResponse.json({
@@ -35,18 +42,24 @@ async function getHandler(req: NextRequest): Promise<NextResponse> {
             });
         }
 
-        const studentIds = students.map((s: any) => s._id);
+        const studentIds = students.map((s) => s._id);
 
-        // Fetch all submitted attempts for these students
+        // 2. Fetch submitted attempts only
         const attempts = await ExamAttempt.find({
             student: { $in: studentIds },
             status: 'submitted',
         })
-            .select('student score totalPoints percentage examType submittedAt')
-            .lean();
+            .select('student score totalPoints percentage submittedAt')
+            .lean() as Array<{
+                student?: { toString(): string };
+                score?: number;
+                totalPoints?: number;
+                percentage?: number;
+                submittedAt?: Date | string;
+            }>;
 
-        // Map studentId -> attempts
-        const attemptsMap = new Map<string, {
+        // 3. Aggregate per student
+        const aggMap = new Map<string, {
             totalScore: number;
             totalPoints: number;
             count: number;
@@ -54,11 +67,11 @@ async function getHandler(req: NextRequest): Promise<NextResponse> {
             lastSubmittedAt: Date | null;
         }>();
 
-        for (const att of (attempts as any[])) {
+        for (const att of attempts) {
             const sid = att.student?.toString();
             if (!sid) continue;
 
-            const existing = attemptsMap.get(sid) || {
+            const existing = aggMap.get(sid) ?? {
                 totalScore: 0,
                 totalPoints: 0,
                 count: 0,
@@ -72,20 +85,25 @@ async function getHandler(req: NextRequest): Promise<NextResponse> {
             existing.percentageSum += att.percentage ?? 0;
 
             const submittedDate = att.submittedAt ? new Date(att.submittedAt) : null;
-            if (submittedDate && (!existing.lastSubmittedAt || submittedDate > existing.lastSubmittedAt)) {
+            if (
+                submittedDate &&
+                !isNaN(submittedDate.getTime()) &&
+                (!existing.lastSubmittedAt || submittedDate > existing.lastSubmittedAt)
+            ) {
                 existing.lastSubmittedAt = submittedDate;
             }
 
-            attemptsMap.set(sid, existing);
+            aggMap.set(sid, existing);
         }
 
-        // Build ranked list: only students with at least 1 exam attempt
-        const studentMap = new Map<string, any>();
-        for (const s of (students as any[])) {
-            studentMap.set(s._id.toString(), s);
+        // 4. Build student lookup
+        const studentMap = new Map<string, { name: string; grade?: string }>();
+        for (const s of students) {
+            studentMap.set(s._id.toString(), { name: s.name, grade: s.grade });
         }
 
-        interface RankedStudent {
+        // 5. Build ranked array — students with at least 1 attempt
+        const ranked: Array<{
             studentId: string;
             name: string;
             grade: string;
@@ -94,16 +112,14 @@ async function getHandler(req: NextRequest): Promise<NextResponse> {
             totalPoints: number;
             avgPercentage: number;
             lastSubmittedAt: Date | null;
-        }
+        }> = [];
 
-        const ranked: RankedStudent[] = [];
-
-        for (const [sid, stats] of Array.from(attemptsMap.entries())) {
+        for (const [sid, stats] of Array.from(aggMap.entries())) {
             if (stats.count === 0) continue;
             const student = studentMap.get(sid);
             if (!student) continue;
 
-            const avgPercentage = stats.count > 0 ? stats.percentageSum / stats.count : 0;
+            const avgPercentage = stats.percentageSum / stats.count;
 
             ranked.push({
                 studentId: sid,
@@ -117,7 +133,7 @@ async function getHandler(req: NextRequest): Promise<NextResponse> {
             });
         }
 
-        // Sort by avgPercentage desc, then totalScore desc, then examCount desc
+        // 6. Sort: avg% desc → totalScore desc → examCount desc
         ranked.sort((a, b) => {
             if (b.avgPercentage !== a.avgPercentage) return b.avgPercentage - a.avgPercentage;
             if (b.totalScore !== a.totalScore) return b.totalScore - a.totalScore;
@@ -126,20 +142,35 @@ async function getHandler(req: NextRequest): Promise<NextResponse> {
 
         const topStudents = ranked.slice(0, topN);
 
-        // Assign ranks with tie handling
-        const leaderboard = topStudents.map((student, index) => {
-            let rank = index + 1;
-            if (index > 0) {
-                const prev = topStudents[index - 1];
+        // 7. Assign ranks with tie detection
+        const leaderboard: Array<{
+            rank: number;
+            studentId: string;
+            name: string;
+            grade: string;
+            examCount: number;
+            totalScore: number;
+            totalPoints: number;
+            avgPercentage: number;
+            lastSubmittedAt: string | null;
+        }> = [];
+
+        for (let i = 0; i < topStudents.length; i++) {
+            const student = topStudents[i];
+            let rank = i + 1;
+
+            if (i > 0) {
+                const prev = topStudents[i - 1];
                 if (
                     prev.avgPercentage === student.avgPercentage &&
                     prev.totalScore === student.totalScore &&
                     prev.examCount === student.examCount
                 ) {
-                    rank = leaderboard[index - 1].rank;
+                    rank = leaderboard[i - 1].rank;
                 }
             }
-            return {
+
+            leaderboard.push({
                 rank,
                 studentId: student.studentId,
                 name: student.name,
@@ -148,23 +179,24 @@ async function getHandler(req: NextRequest): Promise<NextResponse> {
                 totalScore: student.totalScore,
                 totalPoints: student.totalPoints,
                 avgPercentage: student.avgPercentage,
-                lastSubmittedAt: student.lastSubmittedAt,
-            };
-        });
-
-        const top = ranked[0] || null;
-
-        // Safe lastUpdated calculation
-        let lastUpdated = new Date().toISOString();
-        const attemptsWithDates = (attempts as any[]).filter(a => a.submittedAt);
-        if (attemptsWithDates.length > 0) {
-            let maxTime = 0;
-            for (const a of attemptsWithDates) {
-                const t = new Date(a.submittedAt).getTime();
-                if (t > maxTime) maxTime = t;
-            }
-            lastUpdated = new Date(maxTime).toISOString();
+                lastSubmittedAt: student.lastSubmittedAt
+                    ? student.lastSubmittedAt.toISOString()
+                    : null,
+            });
         }
+
+        const top = ranked[0] ?? null;
+
+        // 8. Safe lastUpdated — loop instead of spread to avoid stack overflow on large arrays
+        let lastUpdated = new Date().toISOString();
+        let maxTime = 0;
+        for (const att of attempts) {
+            if (att.submittedAt) {
+                const t = new Date(att.submittedAt).getTime();
+                if (!isNaN(t) && t > maxTime) maxTime = t;
+            }
+        }
+        if (maxTime > 0) lastUpdated = new Date(maxTime).toISOString();
 
         return NextResponse.json({
             success: true,
@@ -172,16 +204,17 @@ async function getHandler(req: NextRequest): Promise<NextResponse> {
                 leaderboard,
                 stats: {
                     totalRankedStudents: ranked.length,
-                    topStudentName: top?.name || null,
+                    topStudentName: top?.name ?? null,
                     highestAvgPercentage: top ? top.avgPercentage : null,
                     lastUpdated,
                 },
             },
         });
-    } catch (err) {
-        console.error('Honor board error:', err);
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error('[honor-board] error:', message);
         return NextResponse.json(
-            { success: false, message: 'حدث خطأ في الخادم أثناء تحميل لوحة الشرف' },
+            { success: false, message: 'حدث خطأ في الخادم', detail: message },
             { status: 500 }
         );
     }

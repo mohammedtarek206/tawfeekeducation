@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { SUBJECTS, getSubjectLabel } from '@/lib/constants/subjects';
 import { ACTIVE_GRADES, gradeLabel } from '@/lib/constants/grades';
-
+import Link from 'next/link';
 
 const DIFF_LABELS: Record<string, string> = {
     easy: 'سهل',
@@ -25,6 +25,16 @@ export default function AdminQuestionsPage() {
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
 
+    // Bulk selection state
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    const [bulkDeleting, setBulkDeleting] = useState(false);
+
+    // Filters
+    const [filterGrade, setFilterGrade] = useState('');
+    const [filterSubject, setFilterSubject] = useState('');
+    const [filterDifficulty, setFilterDifficulty] = useState('');
+    const [search, setSearch] = useState('');
+
     const [form, setForm] = useState({
         text: '',
         options: ['', '', '', ''],
@@ -35,16 +45,28 @@ export default function AdminQuestionsPage() {
         lessonRef: '',
     });
 
-    const load = () => {
+    const load = useCallback(() => {
         setLoading(true);
-        fetch('/api/admin/questions')
-            .then(r => r.json())
-            .then(res => { if (res.success) setQuestions(res.data.questions); })
-            .catch(() => { })
-            .finally(() => setLoading(false));
-    };
+        const params = new URLSearchParams({ limit: '200' });
+        if (filterGrade) params.set('grade', filterGrade);
+        if (filterSubject) params.set('subject', filterSubject);
+        if (filterDifficulty) params.set('difficulty', filterDifficulty);
+        if (search) params.set('search', search);
 
-    useEffect(() => { load(); }, []);
+        fetch(`/api/admin/questions?${params.toString()}`)
+            .then(r => r.json())
+            .then(res => {
+                if (res.success) {
+                    setQuestions(res.data.questions);
+                    // Clear selection on reload
+                    setSelectedIds(new Set());
+                }
+            })
+            .catch(() => setError('خطأ في تحميل الأسئلة'))
+            .finally(() => setLoading(false));
+    }, [filterGrade, filterSubject, filterDifficulty, search]);
+
+    useEffect(() => { load(); }, [load]);
 
     const handleOptionChange = (i: number, val: string) => {
         const opts = [...form.options];
@@ -62,7 +84,6 @@ export default function AdminQuestionsPage() {
             setError('يجب تحديد المادة الدراسية');
             return;
         }
-
         setSaving(true);
         setError('');
         try {
@@ -93,6 +114,7 @@ export default function AdminQuestionsPage() {
         }
     };
 
+    // Single delete
     const handleDelete = async (id: string) => {
         if (!confirm('هل أنت متأكد من حذف هذا السؤال؟')) return;
         try {
@@ -112,21 +134,153 @@ export default function AdminQuestionsPage() {
         }
     };
 
+    // Bulk delete
+    const handleBulkDelete = async () => {
+        if (selectedIds.size === 0) return;
+        if (!confirm(`هل أنت متأكد من حذف ${selectedIds.size} سؤال؟ لا يمكن التراجع عن هذه العملية.`)) return;
+
+        setBulkDeleting(true);
+        setError('');
+        try {
+            const res = await fetch('/api/admin/questions/bulk-delete', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: Array.from(selectedIds) }),
+            });
+            const data = await res.json();
+            if (data.success) {
+                setSuccess(`✅ تم حذف ${data.data.deletedCount} سؤال بنجاح`);
+                setTimeout(() => setSuccess(''), 4000);
+                load();
+            } else {
+                setError(data.message || 'حدث خطأ أثناء الحذف الجماعي');
+                setTimeout(() => setError(''), 5000);
+            }
+        } catch {
+            setError('حدث خطأ في الاتصال بالخادم');
+            setTimeout(() => setError(''), 5000);
+        } finally {
+            setBulkDeleting(false);
+        }
+    };
+
+    // Selection helpers
+    const toggleSelect = (id: string) => {
+        setSelectedIds(prev => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id); else next.add(id);
+            return next;
+        });
+    };
+
+    const toggleSelectAll = () => {
+        if (selectedIds.size === questions.length) {
+            setSelectedIds(new Set());
+        } else {
+            setSelectedIds(new Set(questions.map((q: any) => q._id)));
+        }
+    };
+
+    const clearSelection = () => setSelectedIds(new Set());
+
+    const allSelected = questions.length > 0 && selectedIds.size === questions.length;
+    const someSelected = selectedIds.size > 0 && selectedIds.size < questions.length;
+
     return (
         <div className="space-y-6">
+            {/* Header */}
             <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
                 <div>
                     <h1 className="text-2xl font-bold text-gray-900">بنك الأسئلة</h1>
                     <p className="text-gray-500 mt-1">إدارة الأسئلة المستخدمة في الكويزات والامتحانات</p>
                 </div>
-                <button onClick={() => setShowForm(!showForm)} className="btn-primary self-start">
-                    {showForm ? '✕ إلغاء' : '+ إضافة سؤال'}
-                </button>
+                <div className="flex gap-2 flex-wrap">
+                    <Link href="/admin/questions/import" className="btn-secondary text-sm px-4 py-2 flex items-center gap-1">
+                        📥 استيراد
+                    </Link>
+                    <button onClick={() => setShowForm(!showForm)} className="btn-primary">
+                        {showForm ? '✕ إلغاء' : '+ إضافة سؤال'}
+                    </button>
+                </div>
             </div>
 
+            {/* Alerts */}
             {success && (
                 <div className="bg-green-50 border border-green-200 text-green-700 rounded-xl p-4 font-bold text-sm">{success}</div>
             )}
+            {error && (
+                <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-4 font-bold text-sm">{error}</div>
+            )}
+
+            {/* Bulk Action Bar */}
+            {selectedIds.size > 0 && (
+                <div className="bg-red-50 border border-red-200 rounded-xl p-3 flex items-center gap-3 flex-wrap" dir="rtl">
+                    <span className="text-red-700 font-bold text-sm">
+                        تم تحديد {selectedIds.size} سؤال
+                    </span>
+                    <button
+                        onClick={handleBulkDelete}
+                        disabled={bulkDeleting}
+                        className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-bold disabled:opacity-60 transition-colors flex items-center gap-2"
+                    >
+                        {bulkDeleting ? (
+                            <>
+                                <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                جاري الحذف...
+                            </>
+                        ) : (
+                            <>🗑️ حذف المحدد ({selectedIds.size})</>
+                        )}
+                    </button>
+                    <button
+                        onClick={clearSelection}
+                        className="px-3 py-2 bg-white border border-gray-200 text-gray-600 rounded-lg text-sm font-bold hover:bg-gray-50 transition-colors"
+                    >
+                        ✕ إلغاء التحديد
+                    </button>
+                </div>
+            )}
+
+            {/* Filters */}
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex flex-wrap gap-3 items-center" dir="rtl">
+                <input
+                    type="text"
+                    placeholder="🔍 بحث في الأسئلة..."
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                    className="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30 bg-white min-w-[180px]"
+                />
+                <select
+                    value={filterGrade}
+                    onChange={e => setFilterGrade(e.target.value)}
+                    className="border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white"
+                >
+                    <option value="">كل الصفوف</option>
+                    {ACTIVE_GRADES.map(g => (
+                        <option key={g.value} value={g.value}>{g.label}</option>
+                    ))}
+                </select>
+                <select
+                    value={filterSubject}
+                    onChange={e => setFilterSubject(e.target.value)}
+                    className="border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white"
+                >
+                    <option value="">كل المواد</option>
+                    {SUBJECTS.map(s => (
+                        <option key={s.value} value={s.value}>{s.label}</option>
+                    ))}
+                </select>
+                <select
+                    value={filterDifficulty}
+                    onChange={e => setFilterDifficulty(e.target.value)}
+                    className="border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white"
+                >
+                    <option value="">كل المستويات</option>
+                    <option value="easy">سهل</option>
+                    <option value="medium">متوسط</option>
+                    <option value="hard">صعب</option>
+                </select>
+            </div>
 
             {/* Add Question Form */}
             {showForm && (
@@ -217,10 +371,32 @@ export default function AdminQuestionsPage() {
 
             {/* Questions List */}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-                    <h2 className="font-bold text-gray-900">الأسئلة المضافة</h2>
-                    <span className="bg-gray-100 text-gray-700 text-xs font-bold px-3 py-1 rounded-full">{questions.length} سؤال</span>
+                <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between gap-3 flex-wrap">
+                    <div className="flex items-center gap-3">
+                        {/* Select All Checkbox */}
+                        <label className="flex items-center gap-2 cursor-pointer select-none">
+                            <div className="relative">
+                                <input
+                                    type="checkbox"
+                                    checked={allSelected}
+                                    ref={el => {
+                                        if (el) el.indeterminate = someSelected;
+                                    }}
+                                    onChange={toggleSelectAll}
+                                    className="w-4 h-4 accent-red-600 cursor-pointer"
+                                />
+                            </div>
+                            <span className="text-sm font-bold text-gray-600">
+                                {allSelected ? 'إلغاء تحديد الكل' : 'تحديد الكل'}
+                            </span>
+                        </label>
+                        <h2 className="font-bold text-gray-900">الأسئلة المضافة</h2>
+                    </div>
+                    <span className="bg-gray-100 text-gray-700 text-xs font-bold px-3 py-1 rounded-full">
+                        {questions.length} سؤال
+                    </span>
                 </div>
+
                 {loading ? (
                     <div className="text-center py-16 text-gray-400 animate-pulse">جاري التحميل...</div>
                 ) : questions.length === 0 ? (
@@ -230,37 +406,72 @@ export default function AdminQuestionsPage() {
                     </div>
                 ) : (
                     <div className="divide-y divide-gray-50">
-                        {questions.map((q: any, i: number) => (
-                            <div key={q._id} className="px-6 py-4 hover:bg-gray-50/50 transition-colors">
-                                <div className="flex items-start justify-between gap-4">
-                                    <div className="flex-1">
-                                        <div className="flex gap-2 items-center mb-1">
-                                            <span className="px-2 py-0.5 rounded bg-forest text-white text-[10px] font-bold shadow-sm">
-                                                {getSubjectLabel(q.subject)}
-                                            </span>
-                                            <span className="bg-tawfeek-primary/10 text-tawfeek-primary text-[10px] font-bold px-2 py-0.5 rounded">
-                                                {gradeLabel(q.grade)}
-                                            </span>
+                        {questions.map((q: any, i: number) => {
+                            const isSelected = selectedIds.has(q._id);
+                            return (
+                                <div
+                                    key={q._id}
+                                    className={`px-6 py-4 transition-colors ${isSelected ? 'bg-red-50/60' : 'hover:bg-gray-50/50'}`}
+                                >
+                                    <div className="flex items-start gap-3">
+                                        {/* Checkbox */}
+                                        <div className="pt-1 flex-shrink-0">
+                                            <input
+                                                type="checkbox"
+                                                checked={isSelected}
+                                                onChange={() => toggleSelect(q._id)}
+                                                className="w-4 h-4 accent-red-600 cursor-pointer"
+                                            />
                                         </div>
-                                        <p className="font-medium text-gray-900 mb-3">
-                                            <span className="text-gray-400 text-sm ml-2">({i + 1})</span>
-                                            {q.text}
-                                        </p>
-                                        <div className="grid grid-cols-2 gap-1 mb-3">
-                                            {q.choices?.map((opt: any, oi: number) => (
-                                                <div key={oi} className={`text-sm px-3 py-1.5 rounded-lg ${opt.isCorrect ? 'bg-green-100 text-green-800 font-bold' : 'bg-gray-50 text-gray-600'}`}>
-                                                    {opt.isCorrect ? '✓ ' : ''}{opt.text}
+
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex gap-2 items-center mb-1 flex-wrap">
+                                                <span className="px-2 py-0.5 rounded bg-forest text-white text-[10px] font-bold shadow-sm">
+                                                    {getSubjectLabel(q.subject)}
+                                                </span>
+                                                <span className="bg-tawfeek-primary/10 text-tawfeek-primary text-[10px] font-bold px-2 py-0.5 rounded">
+                                                    {gradeLabel(q.grade)}
+                                                </span>
+                                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${DIFF_COLORS[q.difficulty] || 'bg-gray-100 text-gray-600'}`}>
+                                                    {DIFF_LABELS[q.difficulty] || q.difficulty}
+                                                </span>
+                                                <span className="text-gray-400 text-xs font-medium">
+                                                    {q.type === 'mcq' ? 'اختيار متعدد' : 'صح/خطأ'}
+                                                </span>
+                                            </div>
+                                            <p className="font-medium text-gray-900 mb-3">
+                                                <span className="text-gray-400 text-sm ml-2">({i + 1})</span>
+                                                {q.text}
+                                            </p>
+                                            {q.choices && q.choices.length > 0 && (
+                                                <div className="grid grid-cols-2 gap-1 mb-1">
+                                                    {q.choices.map((opt: any, oi: number) => (
+                                                        <div
+                                                            key={oi}
+                                                            className={`text-sm px-3 py-1.5 rounded-lg ${opt.isCorrect
+                                                                ? 'bg-green-100 text-green-800 font-bold'
+                                                                : 'bg-gray-50 text-gray-600'
+                                                                }`}
+                                                        >
+                                                            {opt.isCorrect ? '✓ ' : ''}{opt.text}
+                                                        </div>
+                                                    ))}
                                                 </div>
-                                            ))}
+                                            )}
                                         </div>
-                                        <div className="flex items-center gap-2 flex-wrap">
-                                            <span className={`text-xs font-bold px-2 py-0.5 rounded ${DIFF_COLORS[q.difficulty] || 'bg-gray-100 text-gray-600'}`}>{DIFF_LABELS[q.difficulty] || q.difficulty}</span>
-                                        </div>
+
+                                        {/* Single Delete */}
+                                        <button
+                                            onClick={() => handleDelete(q._id)}
+                                            className="text-red-400 hover:text-red-600 hover:bg-red-50 p-2 rounded-lg transition-colors flex-shrink-0"
+                                            title="حذف السؤال"
+                                        >
+                                            🗑️
+                                        </button>
                                     </div>
-                                    <button onClick={() => handleDelete(q._id)} className="text-red-400 hover:text-red-600 hover:bg-red-50 p-2 rounded-lg transition-colors flex-shrink-0" title="حذف السؤال">🗑️</button>
                                 </div>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 )}
             </div>
