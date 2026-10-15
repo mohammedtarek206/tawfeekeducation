@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/db/connect';
 import Lesson from '@/lib/db/models/Lesson';
 import User from '@/lib/db/models/User';
+import LessonProgress from '@/lib/db/models/LessonProgress';
 import { withStudent } from '@/lib/auth/middleware';
 import { JWTPayload } from '@/lib/auth/jwt';
 import { checkStudentAccess } from '@/lib/subscriptions/checkAccess';
@@ -14,8 +15,12 @@ async function getHandler(
 ): Promise<NextResponse> {
     await connectDB();
 
-    const studentUser = await User.findById(studentPayload.userId).select('name grade status subscriptionStatus subscriptionEndDate').lean() as any;
-    if (!studentUser) return NextResponse.json({ success: false, message: 'المستخدم غير موجود' }, { status: 403 });
+    const studentUser = await User.findById(studentPayload.userId)
+        .select('name grade status subscriptionStatus subscriptionEndDate')
+        .lean() as any;
+    if (!studentUser) {
+        return NextResponse.json({ success: false, message: 'المستخدم غير موجود' }, { status: 403 });
+    }
 
     const lesson = await Lesson.findOne({
         _id: ctx.params.lessonId,
@@ -23,9 +28,11 @@ async function getHandler(
         grade: studentUser.grade,
     }).lean() as any;
 
-    if (!lesson) return NextResponse.json({ success: false, message: 'الحصة غير موجودة' }, { status: 404 });
+    if (!lesson) {
+        return NextResponse.json({ success: false, message: 'الحصة غير موجودة' }, { status: 404 });
+    }
 
-    // Enforce robust server-side subscription access control
+    // Server-side subscription access check
     const access = await checkStudentAccess(studentPayload.userId, {
         grade: studentUser.grade,
         isFreeContent: lesson.isFree,
@@ -48,14 +55,27 @@ async function getHandler(
         );
     }
 
+    // Fetch existing watch progress to restore last position
+    const watchProgress = await LessonProgress.findOne({
+        student: studentPayload.userId,
+        lesson: lesson._id,
+    }).select('watchedPercentage lastWatchedPosition isCompleted pointsAwarded').lean() as any;
+
     return NextResponse.json({
         success: true,
         data: {
             lesson,
             studentName: studentUser.name,
+            watchProgress: watchProgress
+                ? {
+                    watchedPercentage: watchProgress.watchedPercentage || 0,
+                    lastWatchedPosition: watchProgress.lastWatchedPosition || 0,
+                    isCompleted: watchProgress.isCompleted || false,
+                    pointsAwarded: watchProgress.pointsAwarded || false,
+                }
+                : null,
         },
     });
 }
 
 export const GET = withStudent(getHandler);
-

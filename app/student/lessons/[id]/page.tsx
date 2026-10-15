@@ -16,6 +16,7 @@ export default function LessonDetailsPage() {
     const [blockedReason, setBlockedReason] = useState<string | null>(null);
     const [linkedQuiz, setLinkedQuiz] = useState<any>(null);
     const [solutionVideos, setSolutionVideos] = useState<any[]>([]);
+    const [videoCompleted, setVideoCompleted] = useState(false);
 
     useEffect(() => {
         if (!id) return;
@@ -25,6 +26,10 @@ export default function LessonDetailsPage() {
                 if (res.success) {
                     setData(res.data.lesson);
                     setStudentName(res.data.studentName || '');
+                    if (res.data.watchProgress) {
+                        setProgress(res.data.watchProgress);
+                        setVideoCompleted(res.data.watchProgress.isCompleted || false);
+                    }
                     // Fetch linked quiz
                     fetch(`/api/student/exams?type=quiz&lessonId=${id}`)
                         .then((r) => r.json())
@@ -66,14 +71,10 @@ export default function LessonDetailsPage() {
             const result = await res.json();
             if (result.success) {
                 setProgress(result.data);
-                if (result.data.pointsAwarded) {
-                    alert('تم تسجيل إتمام الحصة وحصلت على النقاط!');
-                } else {
-                    alert('تم تسجيل إتمام الحصة!');
-                }
+                setVideoCompleted(true);
             }
         } catch {
-            alert('حدث خطأ');
+            /* silent */
         }
     };
 
@@ -114,13 +115,16 @@ export default function LessonDetailsPage() {
                 </div>
             </div>
 
-            {/* Interactive Video Player with Watermark */}
+            {/* Interactive Video Player with Watermark & Progress Tracking */}
             <VideoPlayer
                 src={data.videoUrl}
                 youtubeId={data.youtubeId}
                 youtubeUrl={data.youtubeUrl}
                 title={data.title}
                 studentName={studentName}
+                lessonId={data._id}
+                initialProgress={progress?.watchedPercentage || 0}
+                onCompleted={() => setVideoCompleted(true)}
             />
 
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col sm:flex-row items-center justify-between gap-4">
@@ -133,11 +137,11 @@ export default function LessonDetailsPage() {
 
                 <button
                     onClick={markAsCompleted}
-                    disabled={progress?.isCompleted}
+                    disabled={videoCompleted || progress?.isCompleted}
                     className={`btn-primary flex items-center justify-center gap-2 px-6 disabled:opacity-75 disabled:bg-tawfeek-green disabled:text-white disabled:cursor-default w-full sm:w-auto`}
                 >
                     <span className="text-xl">✓</span>
-                    {progress?.isCompleted ? 'تم إتمام الحصة' : 'تأكيد إتمام المشاهدة'}
+                    {(videoCompleted || progress?.isCompleted) ? 'تم إتمام الحصة ✅' : 'تأكيد إتمام المشاهدة'}
                 </button>
             </div>
 
