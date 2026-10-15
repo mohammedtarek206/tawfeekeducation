@@ -27,6 +27,16 @@ function extractYouTubeId(url: string): string | null {
     return match ? match[1] : null;
 }
 
+type LessonOption = {
+    _id: string;
+    title: string;
+    unit: string;
+    grade: string;
+    subject?: string;
+    lessonNumber?: number;
+    isPublished?: boolean;
+};
+
 type SolutionVideo = {
     _id: string;
     title: string;
@@ -42,7 +52,9 @@ type SolutionVideo = {
 
 export default function SolutionVideosAdminPage() {
     const [videos, setVideos] = useState<SolutionVideo[]>([]);
-    const [lessonsList, setLessonsList] = useState<any[]>([]);
+    const [lessonsList, setLessonsList] = useState<LessonOption[]>([]);
+    const [lessonsLoading, setLessonsLoading] = useState(false);
+    const [lessonsError, setLessonsError] = useState('');
     const [loading, setLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
     const [editVideo, setEditVideo] = useState<SolutionVideo | null>(null);
@@ -50,7 +62,9 @@ export default function SolutionVideosAdminPage() {
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
     const [filterGrade, setFilterGrade] = useState('');
+    const [successMsg, setSuccessMsg] = useState('');
 
+    // ─── Fetch solution videos list ───────────────────────────────────────────
     const fetchVideos = useCallback(async () => {
         setLoading(true);
         try {
@@ -65,45 +79,101 @@ export default function SolutionVideosAdminPage() {
         }
     }, [filterGrade]);
 
-    const fetchLessons = useCallback(async (selectedGrade: string) => {
-        if (!selectedGrade) return;
+    // ─── Fetch lessons for a given grade using ADMIN API ─────────────────────
+    // KEY FIX: was using /api/public/lessons which filters by showOnHomepage=true,
+    // causing all non-homepage lessons to disappear from the dropdown.
+    // Now using /api/admin/lessons which returns all lessons for the grade.
+    const fetchLessons = useCallback(async (grade: string): Promise<void> => {
+        if (!grade) {
+            setLessonsList([]);
+            return;
+        }
+        setLessonsLoading(true);
+        setLessonsError('');
         try {
-            const res = await fetch(`/api/public/lessons?grade=${selectedGrade}`);
+            const res = await fetch(
+                `/api/admin/lessons?grade=${encodeURIComponent(grade)}&limit=200&page=1`
+            );
+
+            if (!res.ok) {
+                const txt = await res.text();
+                throw new Error(`HTTP ${res.status}: ${txt.slice(0, 100)}`);
+            }
+
             const data = await res.json();
-            if (data.success) setLessonsList(data.data.lessons || []);
-        } catch {
-            console.error('Failed to fetch lessons');
+
+            if (!data.success) {
+                throw new Error(data.message || 'فشل في جلب الحصص');
+            }
+
+            const list: LessonOption[] = (data.data?.lessons ?? []).map((l: any) => ({
+                _id: l._id,
+                title: l.title,
+                unit: l.unit || '',
+                grade: l.grade,
+                subject: l.subject,
+                lessonNumber: l.lessonNumber,
+                isPublished: l.isPublished,
+            }));
+
+            list.sort((a, b) => (a.lessonNumber ?? 0) - (b.lessonNumber ?? 0));
+            setLessonsList(list);
+        } catch (err: any) {
+            console.error('fetchLessons error:', err);
+            setLessonsError(err?.message || 'حدث خطأ أثناء جلب الحصص');
+            setLessonsList([]);
+        } finally {
+            setLessonsLoading(false);
         }
     }, []);
 
     useEffect(() => { fetchVideos(); }, [fetchVideos]);
 
+    // Reload lessons whenever grade changes inside the form
     useEffect(() => {
-        if (form.grade) fetchLessons(form.grade);
-    }, [form.grade, fetchLessons]);
+        if (showModal && form.grade) {
+            fetchLessons(form.grade);
+        }
+    }, [form.grade, showModal, fetchLessons]);
 
+    // ─── Open add modal ───────────────────────────────────────────────────────
     const openAdd = () => {
         setEditVideo(null);
         setForm(EMPTY_FORM);
         setError('');
+        setLessonsError('');
+        setLessonsList([]);
         setShowModal(true);
+        // Fetch lessons for the default grade
+        fetchLessons(EMPTY_FORM.grade);
     };
 
-    const openEdit = (video: SolutionVideo) => {
+    // ─── Open edit modal ──────────────────────────────────────────────────────
+    const openEdit = async (video: SolutionVideo) => {
         setEditVideo(video);
-        const lessonId = typeof video.lesson === 'object' && video.lesson ? video.lesson._id : (video.lesson || '');
-        setForm({
+        const lessonId =
+            typeof video.lesson === 'object' && video.lesson
+                ? video.lesson._id
+                : video.lesson || '';
+
+        const newForm: VideoFormData = {
             title: video.title,
             description: video.description || '',
             youtubeUrl: video.youtubeUrl,
             grade: video.grade,
             lesson: lessonId,
             isPublished: video.isPublished,
-        });
+        };
+        setForm(newForm);
         setError('');
+        setLessonsError('');
+        setLessonsList([]);
         setShowModal(true);
+        // Must fetch lessons for the video's grade so the selected lesson appears
+        await fetchLessons(video.grade);
     };
 
+    // ─── Save (create or update) ──────────────────────────────────────────────
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
         setSaving(true);
@@ -115,10 +185,16 @@ export default function SolutionVideosAdminPage() {
                 : '/api/admin/solution-videos';
             const method = editVideo ? 'PATCH' : 'POST';
 
+            // Send lesson as empty string when not selected — backend handles it
+            const body = {
+                ...form,
+                lesson: form.lesson && form.lesson.trim() !== '' ? form.lesson : undefined,
+            };
+
             const res = await fetch(url, {
                 method,
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(form),
+                body: JSON.stringify(body),
             });
             const data = await res.json();
 
@@ -126,6 +202,8 @@ export default function SolutionVideosAdminPage() {
                 setError(data.message || 'فشل في الحفظ');
             } else {
                 setShowModal(false);
+                setSuccessMsg(editVideo ? 'تم تحديث الفيديو بنجاح ✅' : 'تم إضافة الفيديو بنجاح ✅');
+                setTimeout(() => setSuccessMsg(''), 4000);
                 fetchVideos();
             }
         } catch {
@@ -150,17 +228,31 @@ export default function SolutionVideosAdminPage() {
         if (!confirm('هل أنت متأكد من الحذف؟')) return;
         try {
             await fetch(`/api/admin/solution-videos/${id}`, { method: 'DELETE' });
+            setSuccessMsg('تم الحذف بنجاح');
+            setTimeout(() => setSuccessMsg(''), 3000);
             fetchVideos();
         } catch { }
     };
 
+    // ─── Helper: lesson display label ─────────────────────────────────────────
+    const lessonLabel = (l: LessonOption): string => {
+        const parts: string[] = [];
+        if (l.lessonNumber) parts.push(`حصة ${l.lessonNumber}`);
+        parts.push(l.title);
+        if (l.unit) parts.push(`(${l.unit})`);
+        if (!l.isPublished) parts.push('[مسودة]');
+        return parts.join(' · ');
+    };
+
     return (
-        <div className="space-y-6">
+        <div className="space-y-6" dir="rtl">
             {/* Header */}
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
                 <div>
-                    <h1 className="text-2xl font-black text-gray-900"><span suppressHydrationWarning>▶️</span> فيديوهات الحل</h1>
-                    <p className="text-sm text-gray-500 mt-1">إدارة وإضافة فيديوهات الحل على اليوتيوب</p>
+                    <h1 className="text-2xl font-black text-gray-900">
+                        <span suppressHydrationWarning>▶️</span> فيديوهات الحل
+                    </h1>
+                    <p className="text-sm text-gray-500 mt-1">إدارة وإضافة فيديوهات الحل وربطها بالحصص</p>
                 </div>
                 <button
                     onClick={openAdd}
@@ -169,6 +261,13 @@ export default function SolutionVideosAdminPage() {
                     + إضافة فيديو جديد
                 </button>
             </div>
+
+            {/* Success message */}
+            {successMsg && (
+                <div className="bg-green-50 border border-green-200 text-green-700 rounded-xl p-4 font-bold text-sm">
+                    {successMsg}
+                </div>
+            )}
 
             {/* Filter */}
             <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex items-center gap-4">
@@ -206,6 +305,7 @@ export default function SolutionVideosAdminPage() {
                                 <tr>
                                     <th className="px-6 py-4 text-sm font-bold text-gray-600">الفيديو</th>
                                     <th className="px-6 py-4 text-sm font-bold text-gray-600">الصف</th>
+                                    <th className="px-6 py-4 text-sm font-bold text-gray-600">الحصة المرتبطة</th>
                                     <th className="px-6 py-4 text-sm font-bold text-gray-600">الحالة</th>
                                     <th className="px-6 py-4 text-sm font-bold text-gray-600">المشاهدات</th>
                                     <th className="px-6 py-4 text-sm font-bold text-gray-600">إجراءات</th>
@@ -214,6 +314,7 @@ export default function SolutionVideosAdminPage() {
                             <tbody className="divide-y divide-gray-50">
                                 {videos.map((video) => {
                                     const ytId = video.youtubeId || extractYouTubeId(video.youtubeUrl);
+                                    const linkedLesson = typeof video.lesson === 'object' ? video.lesson : null;
                                     return (
                                         <tr key={video._id} className="hover:bg-gray-50 transition-colors">
                                             <td className="px-6 py-4">
@@ -237,6 +338,15 @@ export default function SolutionVideosAdminPage() {
                                             </td>
                                             <td className="px-6 py-4 text-sm text-gray-600 font-medium">
                                                 {GRADES.find(g => g.value === video.grade)?.label || video.grade}
+                                            </td>
+                                            <td className="px-6 py-4 text-sm text-gray-600">
+                                                {linkedLesson ? (
+                                                    <span className="bg-blue-50 text-blue-700 px-2.5 py-1 rounded-lg text-xs font-bold">
+                                                        📖 {linkedLesson.title}
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-gray-400 text-xs">—</span>
+                                                )}
                                             </td>
                                             <td className="px-6 py-4">
                                                 <button
@@ -277,7 +387,7 @@ export default function SolutionVideosAdminPage() {
                 )}
             </div>
 
-            {/* Modal */}
+            {/* Add/Edit Modal */}
             {showModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
                     <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -301,6 +411,7 @@ export default function SolutionVideosAdminPage() {
                             )}
 
                             <form onSubmit={handleSave} className="space-y-5">
+                                {/* Title */}
                                 <div>
                                     <label className="block text-sm font-bold text-gray-700 mb-1.5">العنوان *</label>
                                     <input
@@ -313,6 +424,7 @@ export default function SolutionVideosAdminPage() {
                                     />
                                 </div>
 
+                                {/* YouTube URL */}
                                 <div>
                                     <label className="block text-sm font-bold text-gray-700 mb-1.5">رابط اليوتيوب *</label>
                                     <input
@@ -320,8 +432,9 @@ export default function SolutionVideosAdminPage() {
                                         required
                                         value={form.youtubeUrl}
                                         onChange={e => setForm({ ...form, youtubeUrl: e.target.value })}
-                                        className="w-full border border-gray-200 bg-gray-50 rounded-xl px-4 py-3 outline-none focus:border-tawfeek-green transition-all text-left dir-ltr"
+                                        className="w-full border border-gray-200 bg-gray-50 rounded-xl px-4 py-3 outline-none focus:border-tawfeek-green transition-all text-left"
                                         placeholder="https://www.youtube.com/watch?v=..."
+                                        dir="ltr"
                                     />
                                     {form.youtubeUrl && extractYouTubeId(form.youtubeUrl) && (
                                         <div className="mt-2 rounded-xl overflow-hidden border border-gray-100">
@@ -334,12 +447,15 @@ export default function SolutionVideosAdminPage() {
                                     )}
                                 </div>
 
+                                {/* Grade */}
                                 <div>
                                     <label className="block text-sm font-bold text-gray-700 mb-1.5">الصف الدراسي *</label>
                                     <select
                                         required
                                         value={form.grade}
-                                        onChange={e => setForm({ ...form, grade: e.target.value, lesson: '' })}
+                                        onChange={e => {
+                                            setForm({ ...form, grade: e.target.value, lesson: '' });
+                                        }}
                                         className="w-full border border-gray-200 bg-gray-50 rounded-xl px-4 py-3 outline-none focus:border-tawfeek-green transition-all"
                                     >
                                         {GRADES.map(g => (
@@ -348,22 +464,65 @@ export default function SolutionVideosAdminPage() {
                                     </select>
                                 </div>
 
+                                {/* Lesson picker — KEY FIX */}
                                 <div>
-                                    <label className="block text-sm font-bold text-gray-700 mb-1.5">الحصة / الدرس المرتبط (اختياري)</label>
+                                    <div className="flex items-center justify-between mb-1.5">
+                                        <label className="block text-sm font-bold text-gray-700">
+                                            الحصة / الدرس المرتبط
+                                            <span className="text-gray-400 font-normal mr-1">(اختياري)</span>
+                                        </label>
+                                        {lessonsLoading && (
+                                            <span className="text-xs text-gray-400 flex items-center gap-1">
+                                                <span className="inline-block w-3 h-3 border-2 border-gray-300 border-t-tawfeek-green rounded-full animate-spin" />
+                                                جاري التحميل...
+                                            </span>
+                                        )}
+                                    </div>
+
+                                    {/* Lessons fetch error */}
+                                    {lessonsError && !lessonsLoading && (
+                                        <div className="flex items-center justify-between bg-orange-50 border border-orange-200 rounded-xl px-4 py-3 mb-2">
+                                            <span className="text-sm text-orange-700 font-bold">⚠️ {lessonsError}</span>
+                                            <button
+                                                type="button"
+                                                onClick={() => fetchLessons(form.grade)}
+                                                className="text-xs font-bold text-orange-600 bg-white border border-orange-200 rounded-lg px-2 py-1 hover:bg-orange-50"
+                                            >
+                                                إعادة المحاولة
+                                            </button>
+                                        </div>
+                                    )}
+
                                     <select
                                         value={form.lesson}
                                         onChange={e => setForm({ ...form, lesson: e.target.value })}
-                                        className="w-full border border-gray-200 bg-gray-50 rounded-xl px-4 py-3 outline-none focus:border-tawfeek-green transition-all"
+                                        disabled={lessonsLoading}
+                                        className="w-full border border-gray-200 bg-gray-50 rounded-xl px-4 py-3 outline-none focus:border-tawfeek-green transition-all disabled:opacity-60"
                                     >
-                                        <option value="">بدون ربط (فيديو حل عام)</option>
+                                        <option value="">— بدون ربط (فيديو حل عام) —</option>
+
+                                        {!lessonsLoading && !lessonsError && lessonsList.length === 0 && (
+                                            <option value="" disabled>
+                                                لا توجد حصص مسجلة لهذا الصف بعد
+                                            </option>
+                                        )}
+
                                         {lessonsList.map(l => (
                                             <option key={l._id} value={l._id}>
-                                                {l.title} ({l.unit || 'بدون وحدة'})
+                                                {lessonLabel(l)}
                                             </option>
                                         ))}
                                     </select>
+
+                                    {/* Info badge */}
+                                    {!lessonsLoading && !lessonsError && lessonsList.length > 0 && (
+                                        <p className="text-xs text-gray-400 mt-1">
+                                            {lessonsList.length} حصة متاحة لهذا الصف
+                                        </p>
+                                    )}
                                 </div>
 
+                                {/* Description */}
                                 <div>
                                     <label className="block text-sm font-bold text-gray-700 mb-1.5">وصف الفيديو (اختياري)</label>
                                     <textarea
@@ -375,6 +534,7 @@ export default function SolutionVideosAdminPage() {
                                     />
                                 </div>
 
+                                {/* Publish toggle */}
                                 <div className="flex items-center gap-3 py-2">
                                     <button
                                         type="button"
@@ -383,15 +543,19 @@ export default function SolutionVideosAdminPage() {
                                     >
                                         <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${form.isPublished ? 'right-1' : 'left-1'}`} />
                                     </button>
-                                    <label className="font-bold text-sm text-gray-700 cursor-pointer" onClick={() => setForm({ ...form, isPublished: !form.isPublished })}>
+                                    <label
+                                        className="font-bold text-sm text-gray-700 cursor-pointer"
+                                        onClick={() => setForm({ ...form, isPublished: !form.isPublished })}
+                                    >
                                         نشر الفيديو الآن
                                     </label>
                                 </div>
 
+                                {/* Actions */}
                                 <div className="flex gap-3 pt-2">
                                     <button
                                         type="submit"
-                                        disabled={saving}
+                                        disabled={saving || lessonsLoading}
                                         className="flex-1 bg-tawfeek-green text-white font-bold py-3.5 rounded-xl hover:opacity-90 active:scale-95 transition-all disabled:opacity-60"
                                     >
                                         {saving ? 'جاري الحفظ...' : editVideo ? 'حفظ التعديلات' : 'إضافة الفيديو'}

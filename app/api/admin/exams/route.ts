@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+﻿import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/db/connect';
 import Exam from '@/lib/db/models/Exam';
 import Question from '@/lib/db/models/Question';
@@ -9,7 +9,7 @@ import { createAuditLog, AUDIT_ACTIONS } from '@/lib/security/auditLog';
 import Notification from '@/lib/db/models/Notification';
 import User from '@/lib/db/models/User';
 
-async function getHandler(req: NextRequest): Promise<NextResponse> {
+async function getHandler(req: NextRequest, _ctx: unknown, _admin: JWTPayload): Promise<NextResponse> {
     await connectDB();
     const { searchParams } = new URL(req.url);
     const type = searchParams.get('type') || '';

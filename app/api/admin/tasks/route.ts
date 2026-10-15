@@ -1,10 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server';
+﻿import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/db/connect';
 import Task from '@/lib/db/models/Task';
 import { withAdmin } from '@/lib/auth/middleware';
 import mongoose from 'mongoose';
 
-async function getHandler(req: NextRequest): Promise<NextResponse> {
+async function getHandler(req: NextRequest, _ctx: unknown, _admin: JWTPayload): Promise<NextResponse> {
     await connectDB();
     const { searchParams } = new URL(req.url);
     const grade = searchParams.get('grade') || '';

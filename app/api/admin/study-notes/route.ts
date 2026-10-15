@@ -1,10 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server';
+﻿import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/db/connect';
 import Material from '@/lib/db/models/Material';
 import { withAdmin } from '@/lib/auth/middleware';
 import { JWTPayload } from '@/lib/auth/jwt';
 
-async function getHandler(req: NextRequest): Promise<NextResponse> {
+async function getHandler(req: NextRequest, _ctx: unknown, _admin: JWTPayload): Promise<NextResponse> {
     await connectDB();
     const notes = await Material.find({ type: 'notes' }).sort({ createdAt: -1 }).lean();
     return NextResponse.json({ success: true, data: { notes } });

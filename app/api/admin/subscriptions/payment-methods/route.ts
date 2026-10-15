@@ -1,11 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server';
+﻿import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/db/connect';
 import PaymentMethod from '@/lib/db/models/PaymentMethod';
 import { withAdmin } from '@/lib/auth/middleware';
 import { paymentMethodSchema } from '@/lib/validation/schemas';
 
 // GET /api/admin/subscriptions/payment-methods
-async function getHandler(req: NextRequest): Promise<NextResponse> {
+async function getHandler(req: NextRequest, _ctx: unknown, _admin: JWTPayload): Promise<NextResponse> {
     await connectDB();
     const paymentMethods = await PaymentMethod.find().sort({ createdAt: -1 }).lean();
 

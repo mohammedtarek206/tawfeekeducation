@@ -1,11 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server';
+﻿import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/db/connect';
 import Question from '@/lib/db/models/Question';
 import { withAdmin } from '@/lib/auth/middleware';
 import { questionSchema } from '@/lib/validation/schemas';
 import { JWTPayload } from '@/lib/auth/jwt';
 
-async function getHandler(req: NextRequest): Promise<NextResponse> {
+async function getHandler(req: NextRequest, _ctx: unknown, _admin: JWTPayload): Promise<NextResponse> {
     await connectDB();
     const { searchParams } = new URL(req.url);
     const page = parseInt(searchParams.get('page') || '1');

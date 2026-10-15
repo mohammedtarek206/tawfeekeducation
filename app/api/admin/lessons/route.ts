@@ -7,7 +7,7 @@ import { JWTPayload } from '@/lib/auth/jwt';
 import { createAuditLog, AUDIT_ACTIONS } from '@/lib/security/auditLog';
 
 // GET /api/admin/lessons
-async function getHandler(req: NextRequest): Promise<NextResponse> {
+async function getHandler(req: NextRequest, _ctx: unknown, _admin: JWTPayload): Promise<NextResponse> {
     await connectDB();
     const { searchParams } = new URL(req.url);
     const page = parseInt(searchParams.get('page') || '1');
