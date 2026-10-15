@@ -54,7 +54,7 @@ async function postHandler(req: NextRequest, _ctx: unknown, admin: JWTPayload): 
 }
 
 // GET /api/admin/points - point transactions
-async function getHandler(req: NextRequest): Promise<NextResponse> {
+async function getHandler(req: NextRequest, _ctx: unknown, _admin: JWTPayload): Promise<NextResponse> {
     await connectDB();
     const { searchParams } = new URL(req.url);
     const studentId = searchParams.get('studentId');
