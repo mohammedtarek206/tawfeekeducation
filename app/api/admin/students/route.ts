@@ -17,7 +17,7 @@ async function handler(req: NextRequest): Promise<NextResponse> {
     const grade = searchParams.get('grade') || '';
     const search = searchParams.get('search') || '';
     const page = parseInt(searchParams.get('page') || '1');
-    const limit = parseInt(searchParams.get('limit') || '20');
+    const limit = parseInt(searchParams.get('limit') || '1000');
 
     const filter: Record<string, unknown> = { role: 'student' };
     if (status) filter.status = status;

@@ -55,7 +55,7 @@ export function parseQuestionsFromText(raw: string): ParsedItem[] {
         if (!questionText) continue;
 
         // Determine question type & validity
-        let qType: 'mcq' | 'true_false' | 'short_answer' | 'essay' = 'short_answer';
+        let qType: 'mcq' | 'true_false' | 'short_answer' | 'essay' = 'true_false';
         let isValid = true;
         let errMsg: string | undefined;
 

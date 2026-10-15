@@ -154,8 +154,9 @@ async function getHandler(req: NextRequest): Promise<NextResponse> {
     });
 
     const top = ranked[0] || null;
-    const lastUpdated = attempts.length > 0
-        ? new Date(Math.max(...(attempts as any[]).filter(a => a.submittedAt).map(a => new Date(a.submittedAt).getTime()))).toISOString()
+    const attemptsWithDate = attempts.filter((a: any) => a.submittedAt);
+    const lastUpdated = attemptsWithDate.length > 0
+        ? new Date(Math.max(...attemptsWithDate.map((a: any) => new Date(a.submittedAt).getTime()))).toISOString()
         : new Date().toISOString();
 
     return NextResponse.json({
