@@ -301,35 +301,53 @@ export default function VideoPlayer({
                 />
             ) : null}
 
-            {/* YouTube Click Blockers — transparent divs that intercept
-                pointer events in zones where YouTube places external links.
-                Positioned ABOVE the iframe (z-index 25) so they capture
-                clicks before they reach the iframe.
-                pointer-events: auto = intercepts | background: transparent = invisible */}
+            {/* ── YouTube Click Blockers ─────────────────────────────────────────
+                Transparent overlays (z-25) above the iframe that intercept
+                pointer events before they reach YouTube's external-link buttons.
+                Layout of YouTube control bar (LTR):
+                  [▶ ──────────────── seek bar ───────────────── 🔊 ⚙ ▣ YT-logo]
+                Strategy: block the RIGHT portion of bottom bar (40% width, 14% h)
+                which covers the YT logo, settings, fullscreen — but leaves
+                play button, seek bar, and volume (all on the left) fully clickable.
+            ──────────────────────────────────────────────────────────────────── */}
             {isYouTube && !hasError && embedUrl && (
                 <>
-                    {/* 1. YouTube logo at bottom-right of control bar (~130×46px) */}
+                    {/* 1. RIGHT side of bottom control bar — covers YT logo + settings
+                          40% width from right, 14% height from bottom (≈56px on 400px player) */}
                     <div
                         aria-hidden="true"
                         className="absolute bottom-0 right-0 z-[25]"
-                        style={{ width: 130, height: 46, pointerEvents: 'auto', cursor: 'default' }}
+                        style={{ width: '40%', height: '14%', pointerEvents: 'auto', cursor: 'default' }}
                         onClickCapture={(e) => e.stopPropagation()}
+                        onMouseDownCapture={(e) => e.stopPropagation()}
                     />
 
-                    {/* 2. Share / Watch-Later overlay — top-right (appears when paused) */}
+                    {/* 2. Thin strip at very bottom (full width) — catches the logo link
+                          that sometimes sits just below the control bar hover area */}
+                    <div
+                        aria-hidden="true"
+                        className="absolute bottom-0 left-0 right-0 z-[25]"
+                        style={{ height: '7%', pointerEvents: 'auto', cursor: 'default' }}
+                        onClickCapture={(e) => e.stopPropagation()}
+                        onMouseDownCapture={(e) => e.stopPropagation()}
+                    />
+
+                    {/* 3. Share / Watch-Later info cards — top-right when paused */}
                     <div
                         aria-hidden="true"
                         className="absolute top-0 right-0 z-[25]"
-                        style={{ width: '40%', height: '18%', pointerEvents: 'auto', cursor: 'default' }}
+                        style={{ width: '45%', height: '20%', pointerEvents: 'auto', cursor: 'default' }}
                         onClickCapture={(e) => e.stopPropagation()}
+                        onMouseDownCapture={(e) => e.stopPropagation()}
                     />
 
-                    {/* 3. "Watch on YouTube" button — top-left (appears on info cards) */}
+                    {/* 4. "Watch on YouTube" / channel link — top-left info cards */}
                     <div
                         aria-hidden="true"
                         className="absolute top-0 left-0 z-[25]"
-                        style={{ width: '30%', height: '14%', pointerEvents: 'auto', cursor: 'default' }}
+                        style={{ width: '35%', height: '16%', pointerEvents: 'auto', cursor: 'default' }}
                         onClickCapture={(e) => e.stopPropagation()}
+                        onMouseDownCapture={(e) => e.stopPropagation()}
                     />
                 </>
             )}
