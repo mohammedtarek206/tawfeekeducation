@@ -30,13 +30,14 @@ export function parseVideoUrl(url?: string, existingId?: string): VideoEmbedInfo
         const id = ytMatch ? ytMatch[1] : existingId;
         const origin = typeof window !== 'undefined' ? encodeURIComponent(window.location.origin) : '';
         // Notes on YouTube embed parameters:
-        // - rel=0: only show related videos from same channel (YouTube changed this — cannot fully disable)
-        // - modestbranding=1: reduces (but doesn't fully remove) YouTube logo in controls
+        // - rel=0: only show related from same channel (YouTube changed this — cannot fully disable)
+        // - modestbranding=1: reduces (but doesn't remove) YouTube logo in controls
         // - fs=0: hides YouTube's own fullscreen button (we use our custom fullscreen wrapper)
         // - iv_load_policy=3: hides video annotations
         // - controls=1: keeps play/pause/volume/progress controls (required for usability)
-        // - disablekb=1: disables keyboard shortcuts within iframe to reduce user escape
-        const baseParams = `rel=0&playsinline=1&controls=1&enablejsapi=1&modestbranding=1&iv_load_policy=3&fs=0${origin ? `&origin=${origin}` : ''}`;
+        // - disablekb=1: disables keyboard shortcuts inside iframe (prevents Ctrl+Y / external nav)
+        // - cc_load_policy=1: loads captions if available
+        const baseParams = `rel=0&playsinline=1&controls=1&enablejsapi=1&modestbranding=1&iv_load_policy=3&fs=0&disablekb=1${origin ? `&origin=${origin}` : ''}`;
         return {
             provider: 'youtube',
             embedUrl: `https://www.youtube.com/embed/${id}?${baseParams}`,

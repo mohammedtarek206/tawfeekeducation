@@ -301,6 +301,40 @@ export default function VideoPlayer({
                 />
             ) : null}
 
+            {/* YouTube Click Blockers — transparent divs that intercept
+                pointer events in zones where YouTube places external links.
+                Positioned ABOVE the iframe (z-index 25) so they capture
+                clicks before they reach the iframe.
+                pointer-events: auto = intercepts | background: transparent = invisible */}
+            {isYouTube && !hasError && embedUrl && (
+                <>
+                    {/* 1. YouTube logo at bottom-right of control bar (~130×46px) */}
+                    <div
+                        aria-hidden="true"
+                        className="absolute bottom-0 right-0 z-[25]"
+                        style={{ width: 130, height: 46, pointerEvents: 'auto', cursor: 'default' }}
+                        onClickCapture={(e) => e.stopPropagation()}
+                    />
+
+                    {/* 2. Share / Watch-Later overlay — top-right (appears when paused) */}
+                    <div
+                        aria-hidden="true"
+                        className="absolute top-0 right-0 z-[25]"
+                        style={{ width: '40%', height: '18%', pointerEvents: 'auto', cursor: 'default' }}
+                        onClickCapture={(e) => e.stopPropagation()}
+                    />
+
+                    {/* 3. "Watch on YouTube" button — top-left (appears on info cards) */}
+                    <div
+                        aria-hidden="true"
+                        className="absolute top-0 left-0 z-[25]"
+                        style={{ width: '30%', height: '14%', pointerEvents: 'auto', cursor: 'default' }}
+                        onClickCapture={(e) => e.stopPropagation()}
+                    />
+                </>
+            )}
+
+
             {/* Progress bar (for lesson videos with lessonId) */}
             {lessonId && watchedPct > 0 && (
                 <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/10 z-30 pointer-events-none">
