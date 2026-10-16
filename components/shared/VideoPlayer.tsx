@@ -301,19 +301,34 @@ export default function VideoPlayer({
                 />
             ) : null}
 
-            {/* ── YouTube Click Blockers ─────────────────────────────────────────
-                Transparent overlays (z-25) above the iframe that intercept
-                pointer events before they reach YouTube's external-link buttons.
-                Layout of YouTube control bar (LTR):
-                  [▶ ──────────────── seek bar ───────────────── 🔊 ⚙ ▣ YT-logo]
-                Strategy: block the RIGHT portion of bottom bar (40% width, 14% h)
-                which covers the YT logo, settings, fullscreen — but leaves
-                play button, seek bar, and volume (all on the left) fully clickable.
-            ──────────────────────────────────────────────────────────────────── */}
+            {/* ── YouTube Click Blockers ────────────────────────────────────────
+                Transparent overlays (z-25) above the iframe that intercept pointer
+                events before they reach YouTube's external navigation links.
+
+                YouTube overlay zones (when hovering / paused):
+                  TOP: [channel-avatar | video title (→ YT link) | share | settings]
+                  BOTTOM: [▶ seek-bar ────────────── 🔊 ⚙ More-videos | YT-logo]
+
+                Strategy:
+                  • Full-width top strip  → blocks title + share + channel links
+                  • Right side of bottom  → blocks YT logo + settings icon
+                  • Full-width bottom strip → extra safety net for logo area
+            ─────────────────────────────────────────────────────────────────── */}
             {isYouTube && !hasError && embedUrl && (
                 <>
-                    {/* 1. RIGHT side of bottom control bar — covers YT logo + settings
-                          40% width from right, 14% height from bottom (≈56px on 400px player) */}
+                    {/* ① FULL-WIDTH top bar — blocks the video title link, channel name,
+                           share button, and all top-bar elements that navigate to YouTube.
+                           Height 15% ≈ ~60px on a 400px-tall player  */}
+                    <div
+                        aria-hidden="true"
+                        className="absolute top-0 left-0 right-0 z-[25]"
+                        style={{ height: '15%', pointerEvents: 'auto', cursor: 'default' }}
+                        onClickCapture={(e) => e.stopPropagation()}
+                        onMouseDownCapture={(e) => e.stopPropagation()}
+                    />
+
+                    {/* ② RIGHT side of bottom control bar — covers YT logo + settings.
+                           Left portion (play / seek / volume) stays fully usable. */}
                     <div
                         aria-hidden="true"
                         className="absolute bottom-0 right-0 z-[25]"
@@ -322,30 +337,11 @@ export default function VideoPlayer({
                         onMouseDownCapture={(e) => e.stopPropagation()}
                     />
 
-                    {/* 2. Thin strip at very bottom (full width) — catches the logo link
-                          that sometimes sits just below the control bar hover area */}
+                    {/* ③ FULL-WIDTH thin strip at very bottom — catches logo hover area */}
                     <div
                         aria-hidden="true"
                         className="absolute bottom-0 left-0 right-0 z-[25]"
                         style={{ height: '7%', pointerEvents: 'auto', cursor: 'default' }}
-                        onClickCapture={(e) => e.stopPropagation()}
-                        onMouseDownCapture={(e) => e.stopPropagation()}
-                    />
-
-                    {/* 3. Share / Watch-Later info cards — top-right when paused */}
-                    <div
-                        aria-hidden="true"
-                        className="absolute top-0 right-0 z-[25]"
-                        style={{ width: '45%', height: '20%', pointerEvents: 'auto', cursor: 'default' }}
-                        onClickCapture={(e) => e.stopPropagation()}
-                        onMouseDownCapture={(e) => e.stopPropagation()}
-                    />
-
-                    {/* 4. "Watch on YouTube" / channel link — top-left info cards */}
-                    <div
-                        aria-hidden="true"
-                        className="absolute top-0 left-0 z-[25]"
-                        style={{ width: '35%', height: '16%', pointerEvents: 'auto', cursor: 'default' }}
                         onClickCapture={(e) => e.stopPropagation()}
                         onMouseDownCapture={(e) => e.stopPropagation()}
                     />
