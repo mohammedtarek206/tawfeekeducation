@@ -488,6 +488,95 @@ export default function AdminSettingsPage() {
                             />
                         </div>
                     </div>
+
+                    {/* SECTION 3: VIDEO PROTECTION SETTINGS */}
+                    <div className="bg-white rounded-3xl border border-earth/40 shadow-sm p-6 md:p-8">
+                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-gray-100 pb-6 mb-6">
+                            <div>
+                                <span className="bg-blue-100 text-blue-800 text-xs font-bold px-3 py-1 rounded-full">حماية المحتوى</span>
+                                <h2 className="text-2xl font-black text-forest mt-2">إعدادات حماية الفيديوهات</h2>
+                                <p className="text-gray-500 text-sm mt-1">التحكم في العلامة المائية وأسلوب عرضها فوق مشغل الفيديو</p>
+                            </div>
+                            <Link href="/admin/security/access-logs" className="px-4 py-2 bg-blue-50 hover:bg-blue-100 text-blue-900 border border-blue-200 text-xs font-bold rounded-xl shrink-0 transition-colors">
+                                سجل محاولات الوصول غير المصرح ←
+                            </Link>
+                        </div>
+
+                        <div className="space-y-6">
+                            {/* Watermark Toggle */}
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-2xl border border-gray-100 bg-white">
+                                <div>
+                                    <div className="font-bold text-gray-900 text-base">تفعيل العلامة المائية على مشغل الفيديو</div>
+                                    <div className="text-sm text-gray-500 mt-1">عند التفعيل، يظهر اسم الطالب فوق مشغل الفيديو ويتحرك بين الزوايا لتقليل سهولة اقتصاصها</div>
+                                    <div className="text-xs text-amber-600 mt-1 font-bold">⚠️ تلطيف: العلامة المائية تقلل مشاركة التسجيلات لكنها لا تمنع تصوير الشاشة بشكل مضمون</div>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <label className="relative inline-flex items-center cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={Boolean(getValue('video_watermark_enabled', true))}
+                                            onChange={e => handleChange('video_watermark_enabled', e.target.checked)}
+                                            className="sr-only peer"
+                                        />
+                                        <div className="w-14 h-7 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:start-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-forest"></div>
+                                    </label>
+                                    <span className="font-bold text-sm text-gray-700">
+                                        {Boolean(getValue('video_watermark_enabled', true)) ? 'مفعّل ON' : 'معطّل OFF'}
+                                    </span>
+                                </div>
+                            </div>
+
+                            {/* Watermark Display Fields */}
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-2xl border border-gray-100 bg-white">
+                                <div>
+                                    <div className="font-bold text-gray-900 text-base">بيانات العلامة المائية</div>
+                                    <div className="text-sm text-gray-500 mt-1">ما الذي يظهر في العلامة المائية بجانب اسم الطالب</div>
+                                </div>
+                                <div className="sm:w-64">
+                                    <select
+                                        value={getValue('video_watermark_fields', 'name')}
+                                        onChange={e => handleChange('video_watermark_fields', e.target.value)}
+                                        className="input-field font-bold text-sm"
+                                    >
+                                        <option value="name">اسم الطالب فقط</option>
+                                        <option value="name_id">اسم الطالب + آخر 4 أرقام من معرّفه</option>
+                                        <option value="name_grade">اسم الطالب + الصف الدراسي</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            {/* Watermark rotation interval */}
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-2xl border border-gray-100 bg-white">
+                                <div>
+                                    <div className="font-bold text-gray-900 text-base">مدة دورة تحرك العلامة (ثانية)</div>
+                                    <div className="text-sm text-gray-500 mt-1">كل كم ثانية تتحرك العلامة المائية إلى زاوية جديدة (8 ثواني: افتراضي)</div>
+                                </div>
+                                <div className="sm:w-32">
+                                    <input
+                                        type="number"
+                                        min={3}
+                                        max={60}
+                                        value={getValue('video_watermark_interval', 8)}
+                                        onChange={e => handleChange('video_watermark_interval', e.target.value)}
+                                        className="input-field text-center font-bold"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Info notice */}
+                            <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 text-sm text-blue-800">
+                                <p className="font-bold mb-2">🔐 ما هو مطبّق حالياً من حماية الفيديو:</p>
+                                <ul className="list-disc list-inside space-y-1 text-xs text-blue-700">
+                                    <li>تحقّق من تسجيل الدخول والاشتراك سيرفر-سايد عند كل طلب درس</li>
+                                    <li>علامة مائية متحركة باسم الطالب فوق الفيديو (لا تعترض نقر مشغل YouTube)</li>
+                                    <li>منع النقر اليميني وسحب الفيديو على مستوى المتصفح</li>
+                                    <li>تسجيل محاولات الوصول غير المصرح بها في سجل الأمان</li>
+                                    <li>معلمة بتحميل مقاطع الفيديو المباشرة بـ <code>controlsList="nodownload"</code></li>
+                                    <li className="text-amber-700 font-bold">القيود التقنية: لا يمكن منع تصوير الشاشة أو منع YouTube من إتاحة روابط تضمينها للجميع</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
                 </>
             )
             }

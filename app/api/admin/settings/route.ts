@@ -61,6 +61,14 @@ async function patchHandler(req: NextRequest, _ctx: unknown, admin: JWTPayload):
         revalidatePath('/register');
     }
 
+    // Revalidate lesson pages when video protection settings change
+    const videoKeys = ['video_watermark_enabled', 'video_watermark_fields', 'video_watermark_interval'];
+    const hasVideoChange = updates.some((u: { key: string }) => videoKeys.includes(u.key));
+    if (hasVideoChange) {
+        revalidatePath('/student/lessons', 'layout');
+        revalidatePath('/api/public/video-settings');
+    }
+
     return NextResponse.json({ success: true, message: 'تم حفظ الإعدادات' });
 }
 

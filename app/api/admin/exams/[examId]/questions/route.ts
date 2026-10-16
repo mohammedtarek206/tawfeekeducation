@@ -35,6 +35,11 @@ async function postHandler(req: NextRequest, ctx: any, admin: JWTPayload): Promi
     if (!body.text || !body.type) {
         return NextResponse.json({ success: false, message: 'نص السؤال ونوعه مطلوبان' }, { status: 400 });
     }
+
+    if (!['mcq', 'true_false', 'essay'].includes(body.type)) {
+        return NextResponse.json({ success: false, message: 'نوع السؤال غير صحيح' }, { status: 400 });
+    }
+
     if (body.type === 'mcq' && (!body.choices || body.choices.length < 2)) {
         return NextResponse.json({ success: false, message: 'يجب إضافة اختيارين على الأقل' }, { status: 400 });
     }
@@ -49,7 +54,7 @@ async function postHandler(req: NextRequest, ctx: any, admin: JWTPayload): Promi
     if (points <= 0) return NextResponse.json({ success: false, message: 'الدرجة يجب أن تكون أكبر من صفر' }, { status: 400 });
 
     try {
-        let choices = body.choices;
+        let choices = body.choices || [];
         let correctAnswer = body.correctAnswer;
 
         if (body.type === 'true_false') {
@@ -58,9 +63,12 @@ async function postHandler(req: NextRequest, ctx: any, admin: JWTPayload): Promi
                 { text: 'خطأ', isCorrect: correctAnswer === 'false' || correctAnswer === false }
             ];
             correctAnswer = choices.find((c: any) => c.isCorrect)?.text;
-        } else {
-            // For MCQ, we'll store choices. correctAnswer string might be useful or just rely on isCorrect
+        } else if (body.type === 'mcq') {
             correctAnswer = choices.find((c: any) => c.isCorrect)?.text;
+        } else {
+            // Essay: no choices
+            choices = [];
+            correctAnswer = undefined;
         }
 
         const newQuestion = await Question.create({
@@ -69,6 +77,8 @@ async function postHandler(req: NextRequest, ctx: any, admin: JWTPayload): Promi
             choices,
             correctAnswer,
             explanation: body.explanation,
+            modelAnswer: body.type === 'essay' ? body.modelAnswer : undefined,
+            gradingCriteria: body.type === 'essay' ? body.gradingCriteria : undefined,
             image: body.image,
             points,
             order: body.order || 0,
@@ -89,7 +99,7 @@ async function postHandler(req: NextRequest, ctx: any, admin: JWTPayload): Promi
             action: 'QUESTION_CREATED',
             target: newQuestion._id.toString(),
             targetModel: 'Question',
-            metadata: { examId: exam._id, text: newQuestion.text }
+            metadata: { examId: exam._id, text: newQuestion.text, type: newQuestion.type }
         });
 
         return NextResponse.json({ success: true, message: 'تم إضافة السؤال بنجاح', data: { question: newQuestion } }, { status: 201 });
@@ -100,3 +110,4 @@ async function postHandler(req: NextRequest, ctx: any, admin: JWTPayload): Promi
 
 export const GET = withAdmin(getHandler);
 export const POST = withAdmin(postHandler);
+

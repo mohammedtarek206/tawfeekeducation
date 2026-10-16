@@ -9,6 +9,16 @@ interface VideoPlayerProps {
     youtubeUrl?: string;
     title?: string;
     studentName?: string;
+    /** If false, watermark is hidden regardless of studentName */
+    watermarkEnabled?: boolean;
+    /** Watermark display mode: 'name' | 'name_id' | 'name_grade' */
+    watermarkFields?: 'name' | 'name_id' | 'name_grade';
+    /** Last 4 chars of student ID (non-sensitive) */
+    studentIdSuffix?: string;
+    /** Student grade label (e.g. 'الثاني الثانوي') */
+    studentGradeLabel?: string;
+    /** Watermark rotation interval in seconds (default 8) */
+    watermarkInterval?: number;
     className?: string;
     /** lessonId to persist watch progress via API */
     lessonId?: string;
@@ -30,12 +40,30 @@ const SAVE_INTERVAL_MS = 15_000;
 // Completion threshold
 const COMPLETION_THRESHOLD = 90;
 
+// Build the watermark text from fields setting
+function buildWatermarkText(
+    name: string | undefined,
+    fields: string,
+    idSuffix?: string,
+    gradeLabel?: string
+): string {
+    if (!name) return '';
+    if (fields === 'name_id' && idSuffix) return `${name} · #***${idSuffix}`;
+    if (fields === 'name_grade' && gradeLabel) return `${name} · ${gradeLabel}`;
+    return name;
+}
+
 export default function VideoPlayer({
     src,
     youtubeId,
     youtubeUrl,
     title = 'فيديو تعليمي',
     studentName,
+    watermarkEnabled = true,
+    watermarkFields = 'name',
+    studentIdSuffix,
+    studentGradeLabel,
+    watermarkInterval = 8,
     className = '',
     lessonId,
     initialProgress = 0,
@@ -82,11 +110,12 @@ export default function VideoPlayer({
 
     // ── Watermark rotation ────────────────────────────────────────────────────
     useEffect(() => {
+        const ms = Math.max(3000, (watermarkInterval || 8) * 1000);
         const interval = setInterval(() => {
             setPosIndex((prev) => (prev + 1) % WATERMARK_POSITIONS.length);
-        }, 8000);
+        }, ms);
         return () => clearInterval(interval);
-    }, []);
+    }, [watermarkInterval]);
 
     // ── Fullscreen listener ───────────────────────────────────────────────────
     useEffect(() => {
@@ -219,6 +248,8 @@ export default function VideoPlayer({
     return (
         <div
             ref={containerRef}
+            onContextMenu={(e) => e.preventDefault()}
+            onDragStart={(e) => e.preventDefault()}
             className={`bg-black rounded-2xl overflow-hidden shadow-2xl relative aspect-video border border-gray-800 select-none group/player ${className}`}
         >
             {/* Loading Indicator */}
@@ -288,16 +319,20 @@ export default function VideoPlayer({
             )}
 
             {/* Moving Student Watermark */}
-            {studentName && (
-                <div
-                    className={`absolute ${currentPosClass} transition-all duration-1000 z-30 pointer-events-none opacity-75 group-hover/player:opacity-95`}
-                >
-                    <div className="bg-black/75 backdrop-blur-md text-white text-xs md:text-sm font-extrabold px-3.5 py-1.5 rounded-xl border border-white/20 shadow-2xl flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-                        <span className="tracking-wide">{studentName}</span>
+            {watermarkEnabled && studentName && (() => {
+                const label = buildWatermarkText(studentName, watermarkFields, studentIdSuffix, studentGradeLabel);
+                return (
+                    <div
+                        className={`absolute ${currentPosClass} transition-all duration-1000 z-30 pointer-events-none opacity-75 group-hover/player:opacity-95`}
+                    >
+                        <div className="bg-black/75 backdrop-blur-md text-white text-xs md:text-sm font-extrabold px-3.5 py-1.5 rounded-xl border border-white/20 shadow-2xl flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                            <span className="tracking-wide">{label}</span>
+                        </div>
                     </div>
-                </div>
-            )}
+                );
+            })()
+            }
 
             {/* Custom Fullscreen Button */}
             <button

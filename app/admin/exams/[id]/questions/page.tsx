@@ -22,11 +22,13 @@ export default function AdminExamQuestionsPage() {
     const [form, setForm] = useState<any>({
         _id: '',
         text: '',
-        type: 'mcq', // mcq | true_false
+        type: 'mcq', // mcq | true_false | essay
         points: 1,
         choices: [{ ...EMPTY_CHOICE }, { ...EMPTY_CHOICE }, { ...EMPTY_CHOICE }, { ...EMPTY_CHOICE }],
         correctAnswer: '',
         explanation: '',
+        modelAnswer: '',
+        gradingCriteria: '',
         image: ''
     });
 
@@ -50,17 +52,21 @@ export default function AdminExamQuestionsPage() {
         if (examId) loadData();
     }, [examId]);
 
+    const resetForm = () => ({
+        _id: '',
+        text: '',
+        type: 'mcq',
+        points: 1,
+        choices: [{ ...EMPTY_CHOICE }, { ...EMPTY_CHOICE }, { ...EMPTY_CHOICE }, { ...EMPTY_CHOICE }],
+        correctAnswer: '',
+        explanation: '',
+        modelAnswer: '',
+        gradingCriteria: '',
+        image: ''
+    });
+
     const openFormForAdd = () => {
-        setForm({
-            _id: '',
-            text: '',
-            type: 'mcq',
-            points: 1,
-            choices: [{ ...EMPTY_CHOICE }, { ...EMPTY_CHOICE }, { ...EMPTY_CHOICE }, { ...EMPTY_CHOICE }],
-            correctAnswer: '',
-            explanation: '',
-            image: ''
-        });
+        setForm(resetForm());
         setError('');
         setShowForm(true);
         scrollTo({ top: 0, behavior: 'smooth' });
@@ -77,14 +83,10 @@ export default function AdminExamQuestionsPage() {
                 ? (q.choices?.find((c: any) => c.isCorrect)?.text === 'صح' ? 'true' : 'false')
                 : '',
             explanation: q.explanation || '',
+            modelAnswer: q.modelAnswer || '',
+            gradingCriteria: q.gradingCriteria || '',
             image: q.image || ''
         });
-
-        if (q.type === 'mcq') {
-            // Find correct choice index and set it up to easily manage from UI if needed,
-            // but we'll use choices[i].isCorrect directly in state.
-        }
-
         setError('');
         setShowForm(true);
         scrollTo({ top: 0, behavior: 'smooth' });
@@ -104,6 +106,20 @@ export default function AdminExamQuestionsPage() {
         setForm({ ...form, choices: newChoices });
     };
 
+    // When type changes, reset type-specific fields
+    const handleTypeChange = (type: string) => {
+        setForm((prev: any) => ({
+            ...prev,
+            type,
+            choices: type === 'mcq'
+                ? [{ ...EMPTY_CHOICE }, { ...EMPTY_CHOICE }, { ...EMPTY_CHOICE }, { ...EMPTY_CHOICE }]
+                : [],
+            correctAnswer: '',
+            modelAnswer: '',
+            gradingCriteria: '',
+        }));
+    };
+
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
         setError('');
@@ -115,9 +131,21 @@ export default function AdminExamQuestionsPage() {
             : `/api/admin/exams/${examId}/questions`;
         const method = form._id ? 'PUT' : 'POST';
 
-        const payload = { ...form };
+        const payload: any = {
+            text: form.text,
+            type: form.type,
+            points: form.points,
+            explanation: form.explanation,
+            image: form.image,
+        };
+
         if (form.type === 'mcq') {
             payload.choices = form.choices.filter((c: any) => c.text.trim() !== '');
+        } else if (form.type === 'true_false') {
+            payload.correctAnswer = form.correctAnswer;
+        } else if (form.type === 'essay') {
+            payload.modelAnswer = form.modelAnswer;
+            payload.gradingCriteria = form.gradingCriteria;
         }
 
         try {
@@ -190,6 +218,7 @@ export default function AdminExamQuestionsPage() {
     if (!exam) return <div className="text-center py-20 text-red-500 font-bold">الامتحان غير موجود.</div>;
 
     const typeLabels: any = { quiz: 'كويز حصة', weekly: 'أسبوعي', monthly: 'شهري' };
+    const activeQuestions = questions.filter(q => q.isActive !== false);
 
     return (
         <div className="space-y-6">
@@ -203,16 +232,28 @@ export default function AdminExamQuestionsPage() {
                     </div>
                     <h1 className="text-2xl font-bold text-gray-900">{exam.title}</h1>
                     <div className="flex flex-wrap gap-4 mt-3 text-sm text-gray-500">
-                        <span>📝 {questions.filter(q => q.isActive !== false).length} سؤال</span>
+                        <span>📝 {activeQuestions.length} سؤال</span>
+                        <span>
+                            📊 منها{' '}
+                            <span className="text-purple-600 font-bold">{activeQuestions.filter(q => q.type === 'essay').length} مقالي</span>
+                            {' · '}
+                            <span className="text-blue-600 font-bold">{activeQuestions.filter(q => q.type !== 'essay').length} اختيار</span>
+                        </span>
                         <span>⭐ درجته: {exam.totalPoints} نقطة</span>
                         <span>⏱ {exam.duration} دقيقة</span>
                         <span>{exam.isPublished ? '🟢 منشور' : '⚫ مسودة'}</span>
                     </div>
                 </div>
-                <div>
+                <div className="flex gap-2">
                     <button onClick={openFormForAdd} className="btn-primary" disabled={showForm}>
                         + إضافة سؤال
                     </button>
+                    <Link
+                        href={`/admin/exams/${examId}/grade`}
+                        className="btn-secondary text-sm px-4 py-2"
+                    >
+                        📋 تصحيح المقالية
+                    </Link>
                 </div>
             </div>
 
@@ -225,12 +266,34 @@ export default function AdminExamQuestionsPage() {
                     <h2 className="font-bold text-gray-900 text-lg mb-6">{form._id ? 'تعديل السؤال' : 'إنشاء سؤال جديد'}</h2>
                     <form onSubmit={handleSave} className="space-y-5">
 
+                        {/* Question type selector */}
                         <div>
                             <label className="input-label">نوع السؤال <span className="text-red-500">*</span></label>
-                            <select className="input-field max-w-xs" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>
-                                <option value="mcq">اختيار من متعدد</option>
-                                <option value="true_false">صح أو خطأ</option>
-                            </select>
+                            <div className="flex gap-3 flex-wrap mt-1">
+                                {[
+                                    { value: 'mcq', label: '🔘 اختيار من متعدد' },
+                                    { value: 'true_false', label: '✅ صح أو خطأ' },
+                                    { value: 'essay', label: '✍️ سؤال مقالي' },
+                                ].map((t) => (
+                                    <label
+                                        key={t.value}
+                                        className={`flex items-center gap-2 cursor-pointer px-4 py-2 rounded-xl border-2 font-bold text-sm transition-all ${form.type === t.value
+                                            ? 'border-tawfeek-primary bg-tawfeek-primary/10 text-tawfeek-primary'
+                                            : 'border-gray-200 bg-gray-50 text-gray-600 hover:border-gray-300'
+                                            }`}
+                                    >
+                                        <input
+                                            type="radio"
+                                            name="questionType"
+                                            value={t.value}
+                                            checked={form.type === t.value}
+                                            onChange={() => handleTypeChange(t.value)}
+                                            className="sr-only"
+                                        />
+                                        {t.label}
+                                    </label>
+                                ))}
+                            </div>
                         </div>
 
                         <div>
@@ -257,7 +320,7 @@ export default function AdminExamQuestionsPage() {
                             />
                         </div>
 
-                        {/* Answers section */}
+                        {/* MCQ Answers section */}
                         {form.type === 'mcq' && (
                             <div className="bg-gray-50 border border-gray-100 rounded-xl p-5">
                                 <label className="input-label mb-3">الاختيارات <span className="text-red-500">*</span> <span className="text-xs text-gray-400 font-normal">(يجب تحديد الإجابة الصحيحة واختيارين على الأقل)</span></label>
@@ -286,6 +349,7 @@ export default function AdminExamQuestionsPage() {
                             </div>
                         )}
 
+                        {/* True/False */}
                         {form.type === 'true_false' && (
                             <div className="bg-gray-50 border border-gray-100 rounded-xl p-5">
                                 <label className="input-label mb-3">الإجابة الصحيحة <span className="text-red-500">*</span></label>
@@ -316,6 +380,39 @@ export default function AdminExamQuestionsPage() {
                             </div>
                         )}
 
+                        {/* Essay fields */}
+                        {form.type === 'essay' && (
+                            <div className="bg-purple-50 border border-purple-100 rounded-xl p-5 space-y-4">
+                                <div className="flex items-center gap-2 mb-1">
+                                    <span className="text-2xl">✍️</span>
+                                    <h3 className="font-bold text-purple-800 text-sm">إعدادات السؤال المقالي</h3>
+                                </div>
+                                <p className="text-xs text-purple-600">
+                                    سيكتب الطالب إجابته في مربع نص. ستتم مراجعة الإجابات يدويًا من قِبل الأدمن وتحديد الدرجة.
+                                </p>
+                                <div>
+                                    <label className="input-label text-purple-800">إجابة نموذجية <span className="text-gray-400 font-normal">(اختياري — للمصحح فقط)</span></label>
+                                    <textarea
+                                        rows={3}
+                                        className="input-field bg-white resize-y"
+                                        placeholder="اكتب الإجابة النموذجية هنا..."
+                                        value={form.modelAnswer}
+                                        onChange={(e) => setForm({ ...form, modelAnswer: e.target.value })}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="input-label text-purple-800">معايير التصحيح <span className="text-gray-400 font-normal">(اختياري — للمصحح فقط)</span></label>
+                                    <textarea
+                                        rows={2}
+                                        className="input-field bg-white resize-y"
+                                        placeholder="مثال: يجب أن تذكر الإجابة 3 أسباب على الأقل..."
+                                        value={form.gradingCriteria}
+                                        onChange={(e) => setForm({ ...form, gradingCriteria: e.target.value })}
+                                    />
+                                </div>
+                            </div>
+                        )}
+
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
                                 <label className="input-label">درجة السؤال <span className="text-red-500">*</span></label>
@@ -323,16 +420,18 @@ export default function AdminExamQuestionsPage() {
                             </div>
                         </div>
 
-                        <div>
-                            <label className="input-label">شرح الإجابة <span className="text-gray-400 font-normal">(اختياري) يظهر للطالب بعد التصحيح</span></label>
-                            <textarea
-                                rows={2}
-                                className="input-field resize-y"
-                                placeholder="اكتب الشرح هنا..."
-                                value={form.explanation}
-                                onChange={(e) => setForm({ ...form, explanation: e.target.value })}>
-                            </textarea>
-                        </div>
+                        {form.type !== 'essay' && (
+                            <div>
+                                <label className="input-label">شرح الإجابة <span className="text-gray-400 font-normal">(اختياري) يظهر للطالب بعد التصحيح</span></label>
+                                <textarea
+                                    rows={2}
+                                    className="input-field resize-y"
+                                    placeholder="اكتب الشرح هنا..."
+                                    value={form.explanation}
+                                    onChange={(e) => setForm({ ...form, explanation: e.target.value })}>
+                                </textarea>
+                            </div>
+                        )}
 
                         <div className="flex gap-3 pt-3 border-t border-gray-100">
                             <button type="submit" disabled={saving} className="btn-primary w-40">{saving ? 'جاري الحفظ...' : 'حفظ السؤال'}</button>
@@ -344,7 +443,7 @@ export default function AdminExamQuestionsPage() {
 
             {/* Questions List */}
             <div className="space-y-4">
-                {questions.filter(q => q.isActive !== false).length === 0 ? (
+                {activeQuestions.length === 0 ? (
                     <div className="text-center py-20 bg-white rounded-2xl border border-gray-100">
                         <div className="text-5xl border-gray-50">📑</div>
                         <p className="text-gray-500 mt-3 font-medium">لا توجد أسئلة لهذا الامتحان حتى الآن.</p>
@@ -353,12 +452,20 @@ export default function AdminExamQuestionsPage() {
                         </button>
                     </div>
                 ) : (
-                    questions.filter(q => q.isActive !== false).map((q, index) => (
-                        <div key={q._id} className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm group">
+                    activeQuestions.map((q, index) => (
+                        <div key={q._id} className={`bg-white p-5 rounded-2xl border shadow-sm group ${q.type === 'essay' ? 'border-purple-200' : 'border-gray-100'}`}>
                             <div className="flex justify-between items-start gap-4 mb-4">
                                 <div>
                                     <div className="flex items-center gap-3 mb-2">
                                         <span className="bg-gray-100 text-gray-500 px-2 py-1 rounded text-xs font-bold">سؤال #{index + 1}</span>
+                                        <span className={`px-2 py-0.5 rounded text-xs font-bold ${q.type === 'essay'
+                                            ? 'bg-purple-100 text-purple-700'
+                                            : q.type === 'true_false'
+                                                ? 'bg-blue-100 text-blue-700'
+                                                : 'bg-green-100 text-green-700'
+                                            }`}>
+                                            {q.type === 'essay' ? '✍️ مقالي' : q.type === 'true_false' ? '✅ صح/خطأ' : '🔘 اختيار متعدد'}
+                                        </span>
                                         <span className="text-tawfeek-primary font-bold text-sm">{q.points} درجة</span>
                                     </div>
                                     <h3 className="font-bold text-gray-900 leading-relaxed whitespace-pre-wrap">{q.text}</h3>
@@ -368,20 +475,38 @@ export default function AdminExamQuestionsPage() {
                                 </div>
                                 <div className="flex flex-col gap-1 items-end">
                                     <button onClick={() => handleMove(index, 'up')} disabled={index === 0} className="p-1 hover:bg-gray-100 rounded text-gray-500 disabled:opacity-30">▲</button>
-                                    <button onClick={() => handleMove(index, 'down')} disabled={index === questions.filter(x => x.isActive !== false).length - 1} className="p-1 hover:bg-gray-100 rounded text-gray-500 disabled:opacity-30">▼</button>
+                                    <button onClick={() => handleMove(index, 'down')} disabled={index === activeQuestions.length - 1} className="p-1 hover:bg-gray-100 rounded text-gray-500 disabled:opacity-30">▼</button>
                                 </div>
                             </div>
 
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4 bg-gray-50 p-4 rounded-xl">
-                                {q.choices?.map((c: any, i: number) => (
-                                    <div key={i} className={`p-2 rounded-lg text-sm border flex items-center gap-2 ${c.isCorrect ? 'bg-green-50 border-green-200 text-green-800 font-bold' : 'bg-white border-gray-200 text-gray-600'}`}>
-                                        <span className={`w-4 h-4 rounded-full flex items-center justify-center shrink-0 text-[10px] ${c.isCorrect ? 'bg-green-500 text-white' : 'bg-gray-200'}`}>
-                                            {c.isCorrect && '✓'}
-                                        </span>
-                                        {c.text}
-                                    </div>
-                                ))}
-                            </div>
+                            {/* MCQ/TrueFalse choices */}
+                            {q.type !== 'essay' && q.choices?.length > 0 && (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4 bg-gray-50 p-4 rounded-xl">
+                                    {q.choices?.map((c: any, i: number) => (
+                                        <div key={i} className={`p-2 rounded-lg text-sm border flex items-center gap-2 ${c.isCorrect ? 'bg-green-50 border-green-200 text-green-800 font-bold' : 'bg-white border-gray-200 text-gray-600'}`}>
+                                            <span className={`w-4 h-4 rounded-full flex items-center justify-center shrink-0 text-[10px] ${c.isCorrect ? 'bg-green-500 text-white' : 'bg-gray-200'}`}>
+                                                {c.isCorrect && '✓'}
+                                            </span>
+                                            {c.text}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            {/* Essay model answer (admin view) */}
+                            {q.type === 'essay' && (
+                                <div className="bg-purple-50 rounded-xl p-4 space-y-2 mb-4">
+                                    <p className="text-xs font-bold text-purple-700 mb-1">معلومات التصحيح (للأدمن فقط):</p>
+                                    {q.modelAnswer ? (
+                                        <p className="text-sm text-purple-900"><span className="font-bold">الإجابة النموذجية:</span> {q.modelAnswer}</p>
+                                    ) : (
+                                        <p className="text-xs text-purple-400 italic">لا توجد إجابة نموذجية</p>
+                                    )}
+                                    {q.gradingCriteria && (
+                                        <p className="text-sm text-purple-900"><span className="font-bold">معايير التصحيح:</span> {q.gradingCriteria}</p>
+                                    )}
+                                </div>
+                            )}
 
                             {q.explanation && (
                                 <div className="bg-blue-50 border border-blue-100 text-blue-800 text-sm p-3 rounded-lg mb-4">

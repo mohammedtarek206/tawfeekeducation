@@ -51,14 +51,16 @@ async function getHandler(
 
     // Fetch questions WITHOUT exposing isCorrect
     const questions = await Question.find({ _id: { $in: exam.questions || [] } })
-        .select('text type choices difficulty points image order')
+        .select('text type choices difficulty points image order modelAnswer gradingCriteria')
         .sort({ order: 1 })
         .lean();
 
-    // Strip isCorrect from choices
+    // Strip isCorrect from choices, keep essay fields
     const safeQuestions = questions.map((q) => ({
         ...q,
-        choices: (q.choices as Array<{ text: string; isCorrect: boolean }>).map(({ text }) => ({ text })),
+        choices: ((q as any).type === 'essay')
+            ? []
+            : (q.choices as Array<{ text: string; isCorrect: boolean }>).map(({ text }) => ({ text })),
     }));
 
     return NextResponse.json({

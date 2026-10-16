@@ -50,4 +50,6 @@ export const AUDIT_ACTIONS = {
     SETTINGS_CHANGED: 'settings.changed',
     FREE_SLOT_ASSIGNED: 'free_slot.assigned',
     REFERRAL_REWARDED: 'referral.rewarded',
+    UNAUTHORIZED_VIDEO_ACCESS: 'security.unauthorized_video_access',
+    UNAUTHORIZED_LESSON_ACCESS: 'security.unauthorized_lesson_access',
 };

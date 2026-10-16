@@ -15,7 +15,7 @@ async function postHandler(req: NextRequest, _ctx: unknown, student: JWTPayload)
     await connectDB();
 
     const body = await req.json();
-    const { examId, examType, answers } = body; // answers: { questionId, selectedChoiceIndex }[]
+    const { examId, examType, answers } = body; // answers: { questionId, selectedChoiceIndex?, essayAnswer? }[]
 
     if (!examId || !examType || !answers) {
         return NextResponse.json({ success: false, message: 'بيانات ناقصة' }, { status: 400 });
@@ -74,37 +74,59 @@ async function postHandler(req: NextRequest, _ctx: unknown, student: JWTPayload)
     }
 
     // SERVER-SIDE SCORING - never trust frontend
-    const questions = exam.questions as unknown as { _id: mongoose.Types.ObjectId }[];
-    const fullQuestions = await Question.find({ _id: { $in: questions.map((q) => q._id) } });
+    const questionsInExam = exam.questions as unknown as { _id: mongoose.Types.ObjectId }[];
+    const fullQuestions = await Question.find({ _id: { $in: questionsInExam.map((q) => q._id) } });
 
     let score = 0;
-    const answerRecords = [];
+    let hasUngradedEssays = false;
+    const answerRecords: any[] = [];
 
     for (const answer of answers) {
         const question = fullQuestions.find((q) => q._id.toString() === answer.questionId);
         if (!question) continue;
 
-        const selectedChoice = (question as unknown as { choices: Array<{ isCorrect: boolean }> }).choices[answer.selectedChoiceIndex];
-        const isCorrect = selectedChoice?.isCorrect || false;
-        const pointsEarned = isCorrect ? question.points : 0;
-        score += pointsEarned;
+        const qType = (question as any).type;
 
-        answerRecords.push({
-            questionId: answer.questionId,
-            selectedChoiceIndex: answer.selectedChoiceIndex,
-            isCorrect,
-            pointsEarned,
-        });
+        if (qType === 'essay') {
+            // Essay answer: store text, mark pending, points 0 until graded
+            hasUngradedEssays = true;
+            answerRecords.push({
+                questionId: answer.questionId,
+                selectedChoiceIndex: -1,
+                isCorrect: false,
+                pointsEarned: 0,
+                essayAnswer: (answer.essayAnswer || '').trim(),
+                gradingStatus: 'pending',
+            });
+        } else {
+            // MCQ or true_false: auto-grade
+            const selectedChoice = (question as unknown as { choices: Array<{ isCorrect: boolean }> }).choices[answer.selectedChoiceIndex];
+            const isCorrect = selectedChoice?.isCorrect || false;
+            const pointsEarned = isCorrect ? question.points : 0;
+            score += pointsEarned;
+
+            answerRecords.push({
+                questionId: answer.questionId,
+                selectedChoiceIndex: answer.selectedChoiceIndex ?? -1,
+                isCorrect,
+                pointsEarned,
+                gradingStatus: 'graded',
+            });
+        }
     }
 
     const totalPoints = fullQuestions.reduce((sum, q) => sum + q.points, 0);
-    const percentage = totalPoints > 0 ? Math.round((score / totalPoints) * 100) : 0;
-    const passed = percentage >= exam.passingScore;
+    // For percentage: only consider auto-graded questions
+    const gradedTotal = fullQuestions
+        .filter((q) => (q as any).type !== 'essay')
+        .reduce((sum, q) => sum + q.points, 0);
+    const percentage = gradedTotal > 0 ? Math.round((score / gradedTotal) * 100) : 0;
+    const passed = !hasUngradedEssays && percentage >= exam.passingScore;
 
-    // Determine points earned
+    // Determine points earned (0 if essays pending)
     const pointsMultiplier = examType === 'monthly_exam' ? 100 : examType === 'weekly_exam' ? 50 : 10;
     const basePoints = parseInt(process.env[`DEFAULT_${examType.toUpperCase()}_POINTS`] || String(pointsMultiplier));
-    const earnedPoints = Math.round(basePoints * (percentage / 100));
+    const earnedPoints = hasUngradedEssays ? 0 : Math.round(basePoints * (percentage / 100));
 
     // Create attempt record
     const attempt = await ExamAttempt.create({
@@ -117,6 +139,7 @@ async function postHandler(req: NextRequest, _ctx: unknown, student: JWTPayload)
         totalPoints,
         percentage,
         passed,
+        hasUngradedEssays,
         pointsAwarded: false,
         earnedPoints,
         submittedAt: now,
@@ -124,8 +147,8 @@ async function postHandler(req: NextRequest, _ctx: unknown, student: JWTPayload)
         serverEndTime: new Date(now.getTime() + exam.duration * 60 * 1000),
     });
 
-    // Award points (only if not already awarded for this exam)
-    if (earnedPoints > 0) {
+    // Award points only when no pending essay questions
+    if (earnedPoints > 0 && !hasUngradedEssays) {
         const alreadyRewarded = await ExamAttempt.findOne({
             student: student.userId,
             examRef: examId,
@@ -157,8 +180,10 @@ async function postHandler(req: NextRequest, _ctx: unknown, student: JWTPayload)
             percentage,
             passed,
             earnedPoints,
+            hasUngradedEssays,
             correctAnswers: answerRecords.filter((a) => a.isCorrect).length,
             totalQuestions: fullQuestions.length,
+            essayCount: answerRecords.filter((a) => a.gradingStatus === 'pending').length,
         },
     });
 }

@@ -72,3 +72,11 @@ export const otpRateLimit = rateLimit({
     windowMs: 60 * 60 * 1000, // 1 hour
     max: parseInt(process.env.OTP_MAX_REQUESTS_PER_HOUR || '5'),
 });
+
+// Rate limit for lesson/video API access: 60 requests per 5 minutes per IP
+export const lessonApiRateLimit = rateLimit({
+    windowMs: 5 * 60 * 1000, // 5 minutes
+    max: parseInt(process.env.LESSON_API_RATE_LIMIT_MAX || '60'),
+    keyGenerator: (req) =>
+        req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || 'unknown',
+});

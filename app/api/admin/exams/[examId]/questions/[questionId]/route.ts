@@ -25,6 +25,9 @@ async function putHandler(req: NextRequest, ctx: any, admin: JWTPayload): Promis
     if (!body.text || !body.type) {
         return NextResponse.json({ success: false, message: 'نص السؤال ونوعه مطلوبان' }, { status: 400 });
     }
+    if (!['mcq', 'true_false', 'essay'].includes(body.type)) {
+        return NextResponse.json({ success: false, message: 'نوع السؤال غير صحيح' }, { status: 400 });
+    }
     if (body.type === 'mcq' && (!body.choices || body.choices.length < 2)) {
         return NextResponse.json({ success: false, message: 'يجب إضافة اختيارين على الأقل' }, { status: 400 });
     }
@@ -39,7 +42,7 @@ async function putHandler(req: NextRequest, ctx: any, admin: JWTPayload): Promis
     if (points <= 0) return NextResponse.json({ success: false, message: 'الدرجة يجب أن تكون أكبر من صفر' }, { status: 400 });
 
     try {
-        let choices = body.choices;
+        let choices = body.choices || [];
         let correctAnswer = body.correctAnswer;
 
         if (body.type === 'true_false') {
@@ -48,8 +51,12 @@ async function putHandler(req: NextRequest, ctx: any, admin: JWTPayload): Promis
                 { text: 'خطأ', isCorrect: correctAnswer === 'false' || correctAnswer === false }
             ];
             correctAnswer = choices.find((c: any) => c.isCorrect)?.text;
-        } else {
+        } else if (body.type === 'mcq') {
             correctAnswer = choices.find((c: any) => c.isCorrect)?.text;
+        } else {
+            // Essay: clear choices
+            choices = [];
+            correctAnswer = undefined;
         }
 
         // Calculate diff in points for exam totalPoints
@@ -62,6 +69,10 @@ async function putHandler(req: NextRequest, ctx: any, admin: JWTPayload): Promis
         question.explanation = body.explanation;
         question.image = body.image;
         question.points = points;
+        if (body.type === 'essay') {
+            (question as any).modelAnswer = body.modelAnswer || '';
+            (question as any).gradingCriteria = body.gradingCriteria || '';
+        }
 
         if (body.order !== undefined) question.order = body.order;
 

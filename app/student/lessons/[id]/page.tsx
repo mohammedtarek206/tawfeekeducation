@@ -10,6 +10,8 @@ export default function LessonDetailsPage() {
     const { id } = useParams();
     const [data, setData] = useState<any>(null);
     const [studentName, setStudentName] = useState<string>('');
+    const [studentIdSuffix, setStudentIdSuffix] = useState<string>('');
+    const [studentGradeLabel, setStudentGradeLabel] = useState<string>('');
     const [progress, setProgress] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
@@ -17,45 +19,64 @@ export default function LessonDetailsPage() {
     const [linkedQuiz, setLinkedQuiz] = useState<any>(null);
     const [solutionVideos, setSolutionVideos] = useState<any[]>([]);
     const [videoCompleted, setVideoCompleted] = useState(false);
+    // Watermark settings (from DB)
+    const [watermarkEnabled, setWatermarkEnabled] = useState(true);
+    const [watermarkFields, setWatermarkFields] = useState<'name' | 'name_id' | 'name_grade'>('name');
+    const [watermarkInterval, setWatermarkInterval] = useState(8);
 
     useEffect(() => {
         if (!id) return;
-        fetch(`/api/student/lessons/${id}`)
-            .then((r) => r.json())
-            .then((res) => {
-                if (res.success) {
-                    setData(res.data.lesson);
-                    setStudentName(res.data.studentName || '');
-                    if (res.data.watchProgress) {
-                        setProgress(res.data.watchProgress);
-                        setVideoCompleted(res.data.watchProgress.isCompleted || false);
-                    }
-                    // Fetch linked quiz
-                    fetch(`/api/student/exams?type=quiz&lessonId=${id}`)
-                        .then((r) => r.json())
-                        .then((qRes) => {
-                            if (qRes.success && qRes.data?.exams?.length > 0) {
-                                setLinkedQuiz(qRes.data.exams[0]);
-                            }
-                        })
-                        .catch(() => { });
-
-                    // Fetch linked solution videos
-                    fetch(`/api/student/solution-videos?lessonId=${id}`)
-                        .then((r) => r.json())
-                        .then((sRes) => {
-                            if (sRes.success) {
-                                setSolutionVideos(sRes.data?.videos || []);
-                            }
-                        })
-                        .catch(() => { });
-                } else {
-                    if (res.requireSubscription || res.reason) {
-                        setBlockedReason(res.reason || 'no_subscription');
-                    }
-                    setError(res.message || 'الحصة غير موجودة');
+        // Fetch lesson and video protection settings in parallel
+        Promise.all([
+            fetch(`/api/student/lessons/${id}`).then(r => r.json()),
+            fetch('/api/public/video-settings').then(r => r.json()).catch(() => ({ success: false })),
+        ]).then(([res, settingsRes]) => {
+            if (settingsRes.success && settingsRes.data) {
+                const s = settingsRes.data;
+                setWatermarkEnabled(s.video_watermark_enabled !== false);
+                setWatermarkFields(s.video_watermark_fields || 'name');
+                setWatermarkInterval(Number(s.video_watermark_interval) || 8);
+            }
+            if (res.success) {
+                setData(res.data.lesson);
+                setStudentName(res.data.studentName || '');
+                // Build non-sensitive student identifiers from lesson response
+                if (res.data.studentId) {
+                    setStudentIdSuffix(String(res.data.studentId).slice(-4));
                 }
-            })
+                if (res.data.studentGradeLabel) {
+                    setStudentGradeLabel(res.data.studentGradeLabel);
+                }
+                if (res.data.watchProgress) {
+                    setProgress(res.data.watchProgress);
+                    setVideoCompleted(res.data.watchProgress.isCompleted || false);
+                }
+                // Fetch linked quiz
+                fetch(`/api/student/exams?type=quiz&lessonId=${id}`)
+                    .then((r) => r.json())
+                    .then((qRes) => {
+                        if (qRes.success && qRes.data?.exams?.length > 0) {
+                            setLinkedQuiz(qRes.data.exams[0]);
+                        }
+                    })
+                    .catch(() => { });
+
+                // Fetch linked solution videos
+                fetch(`/api/student/solution-videos?lessonId=${id}`)
+                    .then((r) => r.json())
+                    .then((sRes) => {
+                        if (sRes.success) {
+                            setSolutionVideos(sRes.data?.videos || []);
+                        }
+                    })
+                    .catch(() => { });
+            } else {
+                if (res.requireSubscription || res.reason) {
+                    setBlockedReason(res.reason || 'no_subscription');
+                }
+                setError(res.message || 'الحصة غير موجودة');
+            }
+        })
             .catch(() => setError('خطأ في الاتصال'))
             .finally(() => setLoading(false));
     }, [id]);
@@ -122,6 +143,11 @@ export default function LessonDetailsPage() {
                 youtubeUrl={data.youtubeUrl}
                 title={data.title}
                 studentName={studentName}
+                watermarkEnabled={watermarkEnabled}
+                watermarkFields={watermarkFields}
+                studentIdSuffix={studentIdSuffix}
+                studentGradeLabel={studentGradeLabel}
+                watermarkInterval={watermarkInterval}
                 lessonId={data._id}
                 initialProgress={progress?.watchedPercentage || 0}
                 onCompleted={() => setVideoCompleted(true)}

@@ -48,8 +48,8 @@ export default function WeeklyExamsPage() {
                     <button
                         onClick={() => setFilterSubject('all')}
                         className={`px-5 py-2.5 rounded-full whitespace-nowrap text-sm font-bold transition-all ${filterSubject === 'all'
-                                ? 'bg-forest text-white shadow-md shadow-forest/20'
-                                : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
+                            ? 'bg-forest text-white shadow-md shadow-forest/20'
+                            : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
                             }`}
                     >
                         كل المواد
@@ -59,8 +59,8 @@ export default function WeeklyExamsPage() {
                             key={sub.value}
                             onClick={() => setFilterSubject(sub.value)}
                             className={`px-5 py-2.5 rounded-full whitespace-nowrap text-sm font-bold transition-all ${filterSubject === sub.value
-                                    ? 'bg-forest text-white shadow-md shadow-forest/20'
-                                    : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
+                                ? 'bg-forest text-white shadow-md shadow-forest/20'
+                                : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
                                 }`}
                         >
                             {sub.label}
@@ -91,9 +91,11 @@ export default function WeeklyExamsPage() {
                                         <span className={`text-xs font-bold px-2 py-0.5 rounded ${TYPE_COLORS[exam.type]}`}>{TYPE_LABELS[exam.type]}</span>
 
                                         {exam.attempt && (
-                                            <span className={`text-xs font-bold px-2 py-0.5 rounded ${exam.attempt.passed ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                                                سبق وأديته — {exam.attempt.percentage}%
-                                            </span>
+                                            exam.attempt.hasUngradedEssays
+                                                ? <span className="text-xs font-bold px-2 py-0.5 rounded bg-orange-100 text-orange-700">⏳ بانتظار التصحيح</span>
+                                                : <span className={`text-xs font-bold px-2 py-0.5 rounded ${exam.attempt.passed ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                                    سبق وأديته — {exam.attempt.percentage}%
+                                                </span>
                                         )}
                                     </div>
                                     <h3 className="font-bold text-gray-900 text-lg">{exam.title}</h3>

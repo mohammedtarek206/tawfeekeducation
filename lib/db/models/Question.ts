@@ -1,6 +1,6 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
-export type QuestionType = 'mcq' | 'true_false';
+export type QuestionType = 'mcq' | 'true_false' | 'essay';
 export type DifficultyLevel = 'easy' | 'medium' | 'hard';
 
 export interface IChoice {
@@ -15,6 +15,8 @@ export interface IQuestion extends Document {
     choices: IChoice[];
     correctAnswer?: string;
     explanation?: string;
+    modelAnswer?: string;      // For essay questions: sample answer
+    gradingCriteria?: string;  // For essay questions: grading rubric
     difficulty: DifficultyLevel;
     subject: string;
     unit?: string;
@@ -40,9 +42,11 @@ const ChoiceSchema = new Schema<IChoice>({
 const QuestionSchema = new Schema<IQuestion>(
     {
         text: { type: String, required: true, trim: true },
-        type: { type: String, enum: ['mcq', 'true_false'], required: true },
-        choices: { type: [ChoiceSchema], required: true },
+        type: { type: String, enum: ['mcq', 'true_false', 'essay'], required: true },
+        choices: { type: [ChoiceSchema], default: [] },
         explanation: { type: String, trim: true },
+        modelAnswer: { type: String, trim: true },
+        gradingCriteria: { type: String, trim: true },
         difficulty: { type: String, enum: ['easy', 'medium', 'hard'], default: 'medium' },
         subject: {
             type: String,

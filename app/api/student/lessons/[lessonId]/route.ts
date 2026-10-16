@@ -6,6 +6,8 @@ import LessonProgress from '@/lib/db/models/LessonProgress';
 import { withStudent } from '@/lib/auth/middleware';
 import { JWTPayload } from '@/lib/auth/jwt';
 import { checkStudentAccess } from '@/lib/subscriptions/checkAccess';
+import { createAuditLog, AUDIT_ACTIONS } from '@/lib/security/auditLog';
+import { lessonApiRateLimit } from '@/lib/security/rateLimit';
 
 // GET /api/student/lessons/[lessonId]
 async function getHandler(
@@ -13,6 +15,10 @@ async function getHandler(
     ctx: any,
     studentPayload: JWTPayload
 ): Promise<NextResponse> {
+    // Rate limit: 60 requests per IP per 5 minutes
+    const rateLimitResponse = lessonApiRateLimit(req);
+    if (rateLimitResponse) return rateLimitResponse;
+
     await connectDB();
 
     const studentUser = await User.findById(studentPayload.userId)
@@ -39,6 +45,22 @@ async function getHandler(
     });
 
     if (!access.canAccess) {
+        // Log unauthorized access attempt (non-blocking)
+        const ip = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || 'unknown';
+        createAuditLog({
+            actor: studentPayload.userId,
+            actorRole: 'student',
+            action: AUDIT_ACTIONS.UNAUTHORIZED_LESSON_ACCESS,
+            target: lesson._id.toString(),
+            targetModel: 'Lesson',
+            metadata: {
+                reason: access.reason,
+                lessonTitle: lesson.title,
+                grade: studentUser.grade,
+            },
+            ipAddress: ip,
+        }).catch(() => { });
+
         return NextResponse.json(
             {
                 success: false,
@@ -66,6 +88,8 @@ async function getHandler(
         data: {
             lesson,
             studentName: studentUser.name,
+            studentId: String(studentPayload.userId).slice(-8), // last 8 hex chars — non-sensitive
+            studentGradeLabel: studentUser.grade || '',
             watchProgress: watchProgress
                 ? {
                     watchedPercentage: watchProgress.watchedPercentage || 0,
