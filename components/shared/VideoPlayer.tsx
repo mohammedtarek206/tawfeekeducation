@@ -81,6 +81,10 @@ export default function VideoPlayer({
     const [hasError, setHasError] = useState(false);
     const [watchedPct, setWatchedPct] = useState(initialProgress);
     const [isCompleted, setIsCompleted] = useState(initialProgress >= COMPLETION_THRESHOLD);
+    // Anti-capture: show protection overlay when screen recording detected or tab hidden
+    const [captureDetected, setCaptureDetected] = useState(false);
+    const [tabHidden, setTabHidden] = useState(false);
+    const [windowBlurred, setWindowBlurred] = useState(false);
 
     // Parse video info
     const targetUrl = youtubeUrl || src || '';
@@ -127,6 +131,74 @@ export default function VideoPlayer({
             document.removeEventListener('webkitfullscreenchange', handler);
         };
     }, []);
+
+    // ── Anti Screen-Capture: intercept getDisplayMedia ────────────────────────
+    // Detects when the user tries to share their screen via browser APIs.
+    // Works ONLY for browser-based screen capture (Chrome/Edge tab sharing).
+    // Does NOT stop external tools (OBS, mobile cameras, etc.)
+    useEffect(() => {
+        if (typeof navigator === 'undefined' || !navigator.mediaDevices) return;
+        const original = navigator.mediaDevices.getDisplayMedia?.bind(navigator.mediaDevices);
+        if (!original) return;
+
+        (navigator.mediaDevices as any).getDisplayMedia = async (constraints?: any) => {
+            // Show protection overlay immediately
+            setCaptureDetected(true);
+            // Pause YouTube via postMessage
+            iframeRef.current?.contentWindow?.postMessage(
+                JSON.stringify({ event: 'command', func: 'pauseVideo', args: [] }), '*'
+            );
+            // Let the capture proceed (we can't block it) but video is now paused/hidden
+            try {
+                const stream = await original(constraints);
+                // When stream ends (user stops sharing), restore video
+                stream.getVideoTracks().forEach(track => {
+                    track.addEventListener('ended', () => setCaptureDetected(false));
+                });
+                return stream;
+            } catch {
+                setCaptureDetected(false);
+                throw new Error('Screen capture cancelled');
+            }
+        };
+
+        return () => {
+            // Restore original on unmount
+            if (original) (navigator.mediaDevices as any).getDisplayMedia = original;
+        };
+    }, []);
+
+    // ── Anti-Capture: document visibility change (tab hidden) ─────────────────
+    // When the tab becomes hidden (Alt+Tab, minimize, etc.) the video blurs.
+    useEffect(() => {
+        const handleVisibility = () => {
+            const hidden = document.visibilityState === 'hidden';
+            setTabHidden(hidden);
+            if (hidden) {
+                // Pause YouTube when tab is hidden
+                iframeRef.current?.contentWindow?.postMessage(
+                    JSON.stringify({ event: 'command', func: 'pauseVideo', args: [] }), '*'
+                );
+            }
+        };
+        document.addEventListener('visibilitychange', handleVisibility);
+        return () => document.removeEventListener('visibilitychange', handleVisibility);
+    }, []);
+
+    // ── Anti-Capture: window blur (switched away from window) ─────────────────
+    useEffect(() => {
+        const onBlur = () => setWindowBlurred(true);
+        const onFocus = () => setWindowBlurred(false);
+        window.addEventListener('blur', onBlur);
+        window.addEventListener('focus', onFocus);
+        return () => {
+            window.removeEventListener('blur', onBlur);
+            window.removeEventListener('focus', onFocus);
+        };
+    }, []);
+
+    // Combined: show protection overlay when any capture condition is active
+    const showProtectionOverlay = captureDetected || tabHidden || windowBlurred;
 
     // ── Save progress to API ──────────────────────────────────────────────────
     const saveProgress = useCallback(async (pct: number) => {
@@ -276,7 +348,8 @@ export default function VideoPlayer({
                 <video
                     src={embedUrl || undefined}
                     controls
-                    controlsList="nodownload"
+                    controlsList="nodownload nofullscreen noremoteplayback"
+                    disablePictureInPicture
                     onLoadedData={() => setIsLoading(false)}
                     onError={() => { setIsLoading(false); setHasError(true); }}
                     onTimeUpdate={(e) => {
@@ -292,14 +365,35 @@ export default function VideoPlayer({
                     ref={iframeRef}
                     src={embedUrl}
                     title={title}
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                    allowFullScreen
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope"
                     referrerPolicy="strict-origin-when-cross-origin"
                     onLoad={() => setIsLoading(false)}
                     onError={() => { setIsLoading(false); setHasError(true); }}
                     className="absolute top-0 left-0 w-full h-full border-0"
                 />
             ) : null}
+
+            {/* ── Anti Screen-Capture Protection Overlay ───────────────────────
+                Shown when: tab hidden | window blurred | getDisplayMedia detected.
+                Covers the entire video with a blur + warning so captured frames
+                show only the warning, not the lesson content.
+                IMPORTANT: this cannot stop external cameras or OS-level tools.
+            ─────────────────────────────────────────────────────────────────── */}
+            {showProtectionOverlay && (
+                <div className="absolute inset-0 z-[50] flex flex-col items-center justify-center bg-black/95 backdrop-blur-sm">
+                    <div className="text-center px-6 select-none">
+                        <div className="text-5xl mb-4">🔒</div>
+                        <p className="text-white font-black text-lg mb-2">المحتوى محمي</p>
+                        <p className="text-gray-400 text-sm max-w-xs leading-relaxed">
+                            عد إلى تبويب الدرس لمتابعة المشاهدة
+                        </p>
+                        <div className="mt-4 flex items-center justify-center gap-2 text-xs text-tawfeek-green font-bold">
+                            <span className="w-2 h-2 rounded-full bg-tawfeek-green animate-pulse" />
+                            محمي بواسطة منصة التوفيق
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* ── YouTube Click Blockers ────────────────────────────────────────
                 Transparent overlays (z-25) above the iframe that intercept pointer
