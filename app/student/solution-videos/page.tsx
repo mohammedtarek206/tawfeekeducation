@@ -24,6 +24,10 @@ function SolutionVideosContent() {
 
     const [videos, setVideos] = useState<SolutionVideo[]>([]);
     const [studentName, setStudentName] = useState<string>('');
+    const [studentIdSuffix, setStudentIdSuffix] = useState<string>('');
+    const [studentGradeLabel, setStudentGradeLabel] = useState<string>('');
+    const [watermarkFields, setWatermarkFields] = useState<'name' | 'name_id' | 'name_grade'>('name');
+    const [watermarkInterval, setWatermarkInterval] = useState(8);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [blockedReason, setBlockedReason] = useState<string | null>(null);
@@ -35,19 +39,34 @@ function SolutionVideosContent() {
         setError('');
         try {
             const qs = lessonIdParam ? `?lessonId=${lessonIdParam}` : '';
-            const res = await fetch(`/api/student/solution-videos${qs}`);
-            const data = await res.json();
+            const [res, settingsRes] = await Promise.all([
+                fetch(`/api/student/solution-videos${qs}`).then(r => r.json()),
+                fetch('/api/public/video-settings').then(r => r.json()).catch(() => ({ success: false })),
+            ]);
 
-            if (!res.ok || !data.success) {
-                if (data.requireSubscription || data.reason) {
-                    setBlockedReason(data.reason || 'no_subscription');
+            // Apply watermark settings
+            if (settingsRes.success && settingsRes.data) {
+                const s = settingsRes.data;
+                setWatermarkFields(s.video_watermark_fields || 'name');
+                setWatermarkInterval(Number(s.video_watermark_interval) || 8);
+            }
+
+            if (!res.success) {
+                if (res.requireSubscription || res.reason) {
+                    setBlockedReason(res.reason || 'no_subscription');
                 }
-                setError(data.message || 'فشل في تحميل فيديوهات الحل');
+                setError(res.message || 'فشل في تحميل فيديوهات الحل');
             } else {
-                setVideos(data.data.videos || []);
-                setStudentName(data.data.studentName || '');
-                if (data.data.videos?.length > 0 && lessonIdParam) {
-                    setActiveVideo(data.data.videos[0]);
+                setVideos(res.data.videos || []);
+                setStudentName(res.data.studentName || '');
+                if (res.data.studentId) {
+                    setStudentIdSuffix(String(res.data.studentId).slice(-4));
+                }
+                if (res.data.studentGradeLabel) {
+                    setStudentGradeLabel(res.data.studentGradeLabel);
+                }
+                if (res.data.videos?.length > 0 && lessonIdParam) {
+                    setActiveVideo(res.data.videos[0]);
                 }
             }
         } catch {
@@ -138,6 +157,11 @@ function SolutionVideosContent() {
                         youtubeId={activeVideo.youtubeId}
                         title={activeVideo.title}
                         studentName={studentName}
+                        watermarkEnabled={true}
+                        watermarkFields={watermarkFields}
+                        studentIdSuffix={studentIdSuffix}
+                        studentGradeLabel={studentGradeLabel}
+                        watermarkInterval={watermarkInterval}
                     />
 
                     {activeVideo.description && (

@@ -30,9 +30,11 @@ interface VideoPlayerProps {
 
 const WATERMARK_POSITIONS = [
     'bottom-6 right-6',
-    'top-6 left-6',
+    'top-8 left-6',
     'bottom-6 left-6',
-    'top-6 right-6',
+    'top-8 right-6',
+    'top-1/2 left-6 -translate-y-1/2',
+    'top-1/2 right-6 -translate-y-1/2',
 ];
 
 // How often to save progress to server (ms)
@@ -53,6 +55,17 @@ function buildWatermarkText(
     return name;
 }
 
+/**
+ * Send YouTube player command via postMessage.
+ * Only works if enablejsapi=1 is set in the embed URL.
+ */
+function ytCommand(iframe: HTMLIFrameElement | null, func: string, args: unknown[] = []) {
+    iframe?.contentWindow?.postMessage(
+        JSON.stringify({ event: 'command', func, args }),
+        '*'
+    );
+}
+
 export default function VideoPlayer({
     src,
     youtubeId,
@@ -71,9 +84,12 @@ export default function VideoPlayer({
 }: VideoPlayerProps) {
     const containerRef = useRef<HTMLDivElement>(null);
     const iframeRef = useRef<HTMLIFrameElement>(null);
+    const videoRef = useRef<HTMLVideoElement>(null);
     const saveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const lastSavedPctRef = useRef<number>(initialProgress);
     const completedFiredRef = useRef(false);
+    // Track if getDisplayMedia interception is in place
+    const originalGetDisplayMediaRef = useRef<typeof navigator.mediaDevices.getDisplayMedia | null>(null);
 
     const [posIndex, setPosIndex] = useState(0);
     const [isFullscreen, setIsFullscreen] = useState(false);
@@ -81,17 +97,33 @@ export default function VideoPlayer({
     const [hasError, setHasError] = useState(false);
     const [watchedPct, setWatchedPct] = useState(initialProgress);
     const [isCompleted, setIsCompleted] = useState(initialProgress >= COMPLETION_THRESHOLD);
-    // Anti-capture: show protection overlay when screen recording detected or tab hidden
+
+    /**
+     * PROTECTION OVERLAY STATES — documented clearly:
+     *
+     * captureDetected:  TRUE only when browser's getDisplayMedia() was called.
+     *                   This is the ONLY reliable browser-level signal of screen sharing.
+     *                   → Shows full black overlay + pauses video.
+     *
+     * pipDetected:      TRUE when a Document Picture-in-Picture window is opened.
+     *                   This can be used to capture the player outside the normal context.
+     *                   → Shows full black overlay + pauses video.
+     *
+     * tabHidden:        TRUE when the browser tab goes to background (Alt+Tab, minimize).
+     *                   This is NOT proof of screen recording — user may just switch tasks.
+     *                   → Only pauses video silently, does NOT show overlay.
+     */
     const [captureDetected, setCaptureDetected] = useState(false);
-    const [tabHidden, setTabHidden] = useState(false);
-    const [windowBlurred, setWindowBlurred] = useState(false);
+    const [pipDetected, setPipDetected] = useState(false);
+    // tabHidden only pauses playback — no overlay shown (not a capture signal)
+    const tabHiddenRef = useRef(false);
 
     // Parse video info
     const targetUrl = youtubeUrl || src || '';
     const videoInfo = parseVideoUrl(targetUrl, youtubeId);
     const isYouTube = videoInfo.provider === 'youtube';
 
-    // Add autoplay=0&enablejsapi=1&origin to YouTube URL for postMessage API
+    // Add enablejsapi=1 & origin to YouTube URL for postMessage API
     const ytEmbedUrl = (() => {
         if (!isYouTube || !videoInfo.embedUrl) return videoInfo.embedUrl;
         const url = new URL(videoInfo.embedUrl);
@@ -110,6 +142,8 @@ export default function VideoPlayer({
         lastSavedPctRef.current = initialProgress;
         completedFiredRef.current = initialProgress >= COMPLETION_THRESHOLD;
         setIsCompleted(initialProgress >= COMPLETION_THRESHOLD);
+        setCaptureDetected(false);
+        setPipDetected(false);
     }, [targetUrl, youtubeId, initialProgress]);
 
     // ── Watermark rotation ────────────────────────────────────────────────────
@@ -132,73 +166,158 @@ export default function VideoPlayer({
         };
     }, []);
 
-    // ── Anti Screen-Capture: intercept getDisplayMedia ────────────────────────
-    // Detects when the user tries to share their screen via browser APIs.
-    // Works ONLY for browser-based screen capture (Chrome/Edge tab sharing).
-    // Does NOT stop external tools (OBS, mobile cameras, etc.)
-    useEffect(() => {
-        if (typeof navigator === 'undefined' || !navigator.mediaDevices) return;
-        const original = navigator.mediaDevices.getDisplayMedia?.bind(navigator.mediaDevices);
-        if (!original) return;
+    // ── Helper: log security event to server ──────────────────────────────────
+    const logSecurityEvent = useCallback((eventType: 'screen_capture_detected' | 'pip_detected', context?: string) => {
+        // Fire-and-forget — never block the UI
+        fetch('/api/student/security-event', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ eventType, lessonId, context }),
+        }).catch(() => { });
+    }, [lessonId]);
 
-        (navigator.mediaDevices as any).getDisplayMedia = async (constraints?: any) => {
-            // Show protection overlay immediately
+    // ── Helper: pause all media in the player ─────────────────────────────────
+    const pauseAllMedia = useCallback(() => {
+        // Pause YouTube via postMessage
+        ytCommand(iframeRef.current, 'pauseVideo');
+        // Pause direct video element
+        if (videoRef.current && !videoRef.current.paused) {
+            videoRef.current.pause();
+        }
+    }, []);
+
+    // ── Anti Screen-Capture: intercept getDisplayMedia ────────────────────────
+    /**
+     * WHAT THIS DOES:
+     *   Wraps the browser's screen-sharing API so we know when the user initiates
+     *   a browser screen-share (e.g., Chrome's "Share tab" / "Share screen").
+     *
+     * WHAT IT CANNOT DO:
+     *   - Stop OBS, hardware capture cards, or OS-level screen recorders
+     *   - Stop mobile cameras pointed at the screen
+     *   - Stop other browsers/processes that don't use the same JS context
+     *
+     * WHAT HAPPENS ON DETECTION:
+     *   - The video is paused immediately
+     *   - A black "protected content" overlay is shown
+     *   - The event is logged server-side (audit log)
+     *   - Once the share stream ends, the overlay is removed and video can resume
+     */
+    useEffect(() => {
+        if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getDisplayMedia) return;
+
+        const original = navigator.mediaDevices.getDisplayMedia.bind(navigator.mediaDevices);
+        originalGetDisplayMediaRef.current = original;
+
+        (navigator.mediaDevices as any).getDisplayMedia = async (constraints?: DisplayMediaStreamOptions) => {
+            // 1. Pause media immediately — before the share even starts
+            pauseAllMedia();
+            // 2. Show protection overlay
             setCaptureDetected(true);
-            // Pause YouTube via postMessage
-            iframeRef.current?.contentWindow?.postMessage(
-                JSON.stringify({ event: 'command', func: 'pauseVideo', args: [] }), '*'
-            );
-            // Let the capture proceed (we can't block it) but video is now paused/hidden
+            // 3. Log the event to the server (non-blocking)
+            logSecurityEvent('screen_capture_detected', 'getDisplayMedia_intercepted');
+
             try {
+                // 4. Let the capture proceed — we cannot block it from JS
                 const stream = await original(constraints);
-                // When stream ends (user stops sharing), restore video
-                stream.getVideoTracks().forEach(track => {
-                    track.addEventListener('ended', () => setCaptureDetected(false));
+
+                // 5. When stream ends (user stops sharing), restore normal state
+                const allTracks = stream.getTracks();
+                const handleTrackEnd = () => {
+                    // Only restore if ALL tracks have ended
+                    if (allTracks.every(t => t.readyState === 'ended')) {
+                        setCaptureDetected(false);
+                    }
+                };
+                allTracks.forEach(track => {
+                    track.addEventListener('ended', handleTrackEnd);
                 });
+
                 return stream;
             } catch {
+                // User cancelled or denied — restore immediately
                 setCaptureDetected(false);
-                throw new Error('Screen capture cancelled');
+                throw new Error('Screen capture cancelled or denied');
             }
         };
 
         return () => {
             // Restore original on unmount
-            if (original) (navigator.mediaDevices as any).getDisplayMedia = original;
+            if (originalGetDisplayMediaRef.current) {
+                (navigator.mediaDevices as any).getDisplayMedia = originalGetDisplayMediaRef.current;
+            }
         };
-    }, []);
+    }, [pauseAllMedia, logSecurityEvent]);
 
-    // ── Anti-Capture: document visibility change (tab hidden) ─────────────────
-    // When the tab becomes hidden (Alt+Tab, minimize, etc.) the video blurs.
+    // ── Anti-Capture: Document Picture-in-Picture detection ───────────────────
+    /**
+     * WHAT THIS DOES:
+     *   The Document Picture-in-Picture API (Chrome 116+) allows opening a
+     *   detached window with full DOM, which could be used to capture the player
+     *   outside the usual page context. We detect this and show the protection overlay.
+     *
+     * SUPPORTED: Chrome 116+, Edge 116+ on Desktop
+     * NOT SUPPORTED: Firefox, Safari (no Document PiP API yet)
+     */
+    useEffect(() => {
+        const pip = (window as any).documentPictureInPicture;
+        if (!pip) return;
+
+        const handleEnterPip = () => {
+            pauseAllMedia();
+            setPipDetected(true);
+            logSecurityEvent('pip_detected', 'document_pip_opened');
+        };
+
+        const handleLeavePip = () => {
+            setPipDetected(false);
+        };
+
+        pip.addEventListener('enter', handleEnterPip);
+
+        // Listen for when any pip window closes
+        if (pip.window) {
+            pip.window.addEventListener('pagehide', handleLeavePip);
+        }
+
+        return () => {
+            pip.removeEventListener('enter', handleEnterPip);
+        };
+    }, [pauseAllMedia, logSecurityEvent]);
+
+    // ── Tab hidden: silently pause (NOT a capture signal — no overlay shown) ──
+    /**
+     * WHY: We pause the video when the tab goes to background as a UX courtesy
+     * and minor deterrent. We do NOT show an overlay or treat this as a capture
+     * event, because the user may simply be switching tasks.
+     *
+     * If you previously triggered a protection overlay on visibilitychange,
+     * this has been intentionally removed: it caused false positives and annoyed
+     * legitimate students while providing no real security benefit.
+     */
     useEffect(() => {
         const handleVisibility = () => {
             const hidden = document.visibilityState === 'hidden';
-            setTabHidden(hidden);
+            tabHiddenRef.current = hidden;
             if (hidden) {
-                // Pause YouTube when tab is hidden
-                iframeRef.current?.contentWindow?.postMessage(
-                    JSON.stringify({ event: 'command', func: 'pauseVideo', args: [] }), '*'
-                );
+                pauseAllMedia();
             }
         };
         document.addEventListener('visibilitychange', handleVisibility);
         return () => document.removeEventListener('visibilitychange', handleVisibility);
-    }, []);
+    }, [pauseAllMedia]);
 
-    // ── Anti-Capture: window blur (switched away from window) ─────────────────
-    useEffect(() => {
-        const onBlur = () => setWindowBlurred(true);
-        const onFocus = () => setWindowBlurred(false);
-        window.addEventListener('blur', onBlur);
-        window.addEventListener('focus', onFocus);
-        return () => {
-            window.removeEventListener('blur', onBlur);
-            window.removeEventListener('focus', onFocus);
-        };
-    }, []);
+    /**
+     * IMPORTANT: window.blur is explicitly NOT used as a capture/security signal.
+     * It fires for too many legitimate reasons (opening DevTools, clicking another
+     * app, etc.) and has no correlation with actual screen recording.
+     *
+     * It is NOT implemented here. The previous implementation that triggered an
+     * overlay on window.blur has been intentionally removed.
+     */
 
-    // Combined: show protection overlay when any capture condition is active
-    const showProtectionOverlay = captureDetected || tabHidden || windowBlurred;
+    // True protection overlay: only shown for getDisplayMedia or Document PiP
+    const showProtectionOverlay = captureDetected || pipDetected;
 
     // ── Save progress to API ──────────────────────────────────────────────────
     const saveProgress = useCallback(async (pct: number) => {
@@ -234,12 +353,10 @@ export default function VideoPlayer({
         // Periodically ask YouTube player for currentTime
         const pollYT = () => {
             if (!iframeRef.current?.contentWindow) return;
-            // getDuration
             iframeRef.current.contentWindow.postMessage(
                 JSON.stringify({ event: 'command', func: 'getDuration', args: [] }),
                 '*'
             );
-            // getCurrentTime
             iframeRef.current.contentWindow.postMessage(
                 JSON.stringify({ event: 'command', func: 'getCurrentTime', args: [] }),
                 '*'
@@ -316,6 +433,7 @@ export default function VideoPlayer({
     };
 
     const currentPosClass = WATERMARK_POSITIONS[posIndex];
+    const watermarkLabel = buildWatermarkText(studentName, watermarkFields, studentIdSuffix, studentGradeLabel);
 
     return (
         <div
@@ -346,6 +464,7 @@ export default function VideoPlayer({
             {/* Video Content */}
             {videoInfo.isDirectFile ? (
                 <video
+                    ref={videoRef}
                     src={embedUrl || undefined}
                     controls
                     controlsList="nodownload nofullscreen noremoteplayback"
@@ -373,29 +492,49 @@ export default function VideoPlayer({
                 />
             ) : null}
 
-            {/* ── Anti Screen-Capture Protection Overlay ───────────────────────
-                Shown when: tab hidden | window blurred | getDisplayMedia detected.
-                Covers the entire video with a blur + warning so captured frames
-                show only the warning, not the lesson content.
-                IMPORTANT: this cannot stop external cameras or OS-level tools.
+            {/* ── Anti Screen-Capture Protection Overlay ──────────────────────────
+                WHEN SHOWN: Only when getDisplayMedia() is intercepted (browser screen 
+                share) OR when Document PiP window is detected.
+
+                WHAT IT DOES: Covers the entire video area with an opaque black 
+                overlay. Since the overlay is applied in the DOM over the iframe/video,
+                any browser-based screen recorder capturing this tab/window will see 
+                the overlay instead of video content.
+
+                LIMITATIONS:
+                  • Cannot stop OS-level screen recorders (OBS, Windows Game Bar, etc.)
+                  • Cannot stop external cameras pointed at the screen
+                  • Cannot stop YouTube's own content via external YouTube.com access
+                  • YouTube embed does NOT support DRM — the video stream itself is 
+                    not encrypted at the CDN level for free embeds.
+
+                FOR FULL DRM PROTECTION: Migrate to Cloudflare Stream, Bunny.net, 
+                or Vimeo OTT which support Widevine/FairPlay DRM.
             ─────────────────────────────────────────────────────────────────── */}
             {showProtectionOverlay && (
-                <div className="absolute inset-0 z-[50] flex flex-col items-center justify-center bg-black/95 backdrop-blur-sm">
+                <div className="absolute inset-0 z-[60] flex flex-col items-center justify-center bg-black">
                     <div className="text-center px-6 select-none">
-                        <div className="text-5xl mb-4">🔒</div>
+                        <div className="text-5xl mb-4 grayscale">🔒</div>
                         <p className="text-white font-black text-lg mb-2">المحتوى محمي</p>
                         <p className="text-gray-400 text-sm max-w-xs leading-relaxed">
-                            عد إلى تبويب الدرس لمتابعة المشاهدة
+                            {captureDetected
+                                ? 'تم اكتشاف محاولة مشاركة الشاشة. أوقف مشاركة الشاشة لمتابعة المشاهدة.'
+                                : 'تم اكتشاف نافذة Picture-in-Picture. أغلقها لمتابعة المشاهدة.'}
                         </p>
-                        <div className="mt-4 flex items-center justify-center gap-2 text-xs text-tawfeek-green font-bold">
+                        <div className="mt-5 flex items-center justify-center gap-2 text-xs text-tawfeek-green font-bold">
                             <span className="w-2 h-2 rounded-full bg-tawfeek-green animate-pulse" />
                             محمي بواسطة منصة التوفيق
                         </div>
+                        {studentName && (
+                            <p className="mt-3 text-gray-600 text-[11px]">
+                                الجلسة: {watermarkLabel || studentName}
+                            </p>
+                        )}
                     </div>
                 </div>
             )}
 
-            {/* ── YouTube Click Blockers ────────────────────────────────────────
+            {/* ── YouTube Click Blockers ─────────────────────────────────────────
                 Transparent overlays (z-25) above the iframe that intercept pointer
                 events before they reach YouTube's external navigation links.
 
@@ -442,7 +581,6 @@ export default function VideoPlayer({
                 </>
             )}
 
-
             {/* Progress bar (for lesson videos with lessonId) */}
             {lessonId && watchedPct > 0 && (
                 <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/10 z-30 pointer-events-none">
@@ -460,21 +598,27 @@ export default function VideoPlayer({
                 </div>
             )}
 
-            {/* Moving Student Watermark */}
-            {watermarkEnabled && studentName && (() => {
-                const label = buildWatermarkText(studentName, watermarkFields, studentIdSuffix, studentGradeLabel);
-                return (
-                    <div
-                        className={`absolute ${currentPosClass} transition-all duration-1000 z-30 pointer-events-none opacity-75 group-hover/player:opacity-95`}
-                    >
-                        <div className="bg-black/75 backdrop-blur-md text-white text-xs md:text-sm font-extrabold px-3.5 py-1.5 rounded-xl border border-white/20 shadow-2xl flex items-center gap-2">
-                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-                            <span className="tracking-wide">{label}</span>
-                        </div>
+            {/* ── Moving Student Watermark ────────────────────────────────────────
+                PURPOSE: Forensic deterrent. If the video is captured by any means,
+                the watermark identifies the student's session.
+                
+                DESIGN:
+                  • Rotates through 6 positions every `watermarkInterval` seconds
+                  • Semi-transparent with backdrop blur for readability
+                  • z-40 (above click blockers, below protection overlay)
+                  • pointer-events-none (never blocks video controls)
+            ─────────────────────────────────────────────────────────────────── */}
+            {watermarkEnabled && watermarkLabel && (
+                <div
+                    className={`absolute ${currentPosClass} transition-all duration-700 z-40 pointer-events-none`}
+                    style={{ willChange: 'top, left, bottom, right' }}
+                >
+                    <div className="bg-black/70 backdrop-blur-md text-white text-[11px] md:text-xs font-extrabold px-3 py-1.5 rounded-xl border border-white/15 shadow-2xl flex items-center gap-2 opacity-70 hover:opacity-80">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                        <span className="tracking-wide">{watermarkLabel}</span>
                     </div>
-                );
-            })()
-            }
+                </div>
+            )}
 
             {/* Custom Fullscreen Button */}
             <button

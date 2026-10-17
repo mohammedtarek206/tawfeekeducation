@@ -61,6 +61,8 @@ async function getHandler(req: NextRequest, _ctx: unknown, studentPayload: JWTPa
             data: {
                 videos,
                 studentName: studentUser.name || 'طالب منصة التوفيق',
+                studentId: String(studentPayload.userId).slice(-8), // last 8 hex chars — non-sensitive
+                studentGradeLabel: studentUser.grade || '',
             },
         });
     } catch (error) {

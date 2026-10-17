@@ -52,4 +52,6 @@ export const AUDIT_ACTIONS = {
     REFERRAL_REWARDED: 'referral.rewarded',
     UNAUTHORIZED_VIDEO_ACCESS: 'security.unauthorized_video_access',
     UNAUTHORIZED_LESSON_ACCESS: 'security.unauthorized_lesson_access',
+    SCREEN_CAPTURE_DETECTED: 'security.screen_capture_detected',
+    PIP_DETECTED: 'security.pip_detected',
 };
