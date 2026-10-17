@@ -14,9 +14,17 @@ async function patchHandler(
     const body = await req.json();
     const examId = ctx.params?.examId;
 
+    // إذا كان body يحتوي على حقول التعديل الكامل (title موجود)
+    // ويكون النوع غير quiz، نحذف lessonId من قاعدة البيانات
+    const updateOp: Record<string, unknown> = { $set: body };
+    if ('type' in body && body.type !== 'quiz') {
+        // حذف lessonId إن وُجد وتغيّر النوع لغير quiz
+        (updateOp as any).$unset = { lessonId: '' };
+    }
+
     const exam = await Exam.findByIdAndUpdate(
         examId,
-        { $set: body },
+        updateOp,
         { new: true, runValidators: false }
     ).lean();
 

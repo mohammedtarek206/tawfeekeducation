@@ -84,11 +84,18 @@ export const questionSchema = z.object({
 });
 
 export const examSchema = z.object({
-    title: z.string().min(3).max(200),
+    title: z
+        .string({ required_error: 'عنوان الامتحان مطلوب' })
+        .min(3, 'عنوان الامتحان يجب أن يكون 3 أحرف على الأقل')
+        .max(200, 'عنوان الامتحان طويل جداً'),
     description: z.string().max(2000).optional(),
-    type: z.enum(['quiz', 'weekly', 'monthly']),
+    type: z.enum(['quiz', 'weekly', 'monthly'], {
+        errorMap: () => ({ message: 'نوع الامتحان غير صحيح، اختر: quiz أو weekly أو monthly' }),
+    }),
     grade: z.enum(ACTIVE_GRADE_ENUM, { errorMap: () => ({ message: 'يرجى اختيار صف دراسي نشط' }) }),
-    subject: z.enum(SUBJECT_VALUES as [string, ...string[]]).optional(),
+    subject: z.enum(SUBJECT_VALUES as [string, ...string[]], {
+        errorMap: () => ({ message: 'يرجى اختيار المادة الدراسية' }),
+    }).optional(),
     duration: z.number().min(5, 'مدة الامتحان يجب أن تكون 5 دقائق على الأقل'),
     startDate: z.string().optional(),
     endDate: z.string().optional(),
@@ -96,6 +103,7 @@ export const examSchema = z.object({
     passingScore: z.number().min(0).max(100).default(50),
     isPublished: z.boolean().default(false),
     isFree: z.boolean().default(false),
+    // يقبل string فقط — null يُزال من الـ payload في الواجهة قبل الإرسال
     lessonId: z.string().optional(),
 });
 

@@ -123,11 +123,13 @@ export default function AdminExamsPage() {
                 isPublished: form.isPublished,
             };
 
-            // lessonId فقط عند نوع quiz ولا يُرسل روابط فيديو أبدًا
+            // lessonId فقط عند نوع quiz — لا يُرسل null أبدًا (Zod يرفضه)
             if (form.type === 'quiz' && form.lessonId) {
                 payload.lessonId = form.lessonId;
-            } else {
-                payload.lessonId = null;
+            }
+            // عند التعديل وتغيير النوع من quiz إلى غيره، نحذف الربط بالحصة
+            if (editingId && form.type !== 'quiz') {
+                payload.lessonId = undefined;
             }
 
             let res: Response;
