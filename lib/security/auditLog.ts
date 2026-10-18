@@ -39,6 +39,7 @@ export const AUDIT_ACTIONS = {
     STUDENT_SUSPENDED: 'student.suspended',
     STUDENT_ACTIVATED: 'student.activated',
     POINTS_ADJUSTED: 'points.adjusted',
+    POINTS_DEDUCTED: 'points.deducted',
     LESSON_CREATED: 'lesson.created',
     LESSON_UPDATED: 'lesson.updated',
     LESSON_DELETED: 'lesson.deleted',
