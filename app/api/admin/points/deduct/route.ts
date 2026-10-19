@@ -17,37 +17,41 @@ async function postHandler(req: NextRequest, _ctx: unknown, admin: JWTPayload): 
         return NextResponse.json({ success: false, message: 'طلب غير صالح' }, { status: 400 });
     }
 
-    const { studentId, amount, reason, requestId } = body as {
+    const {
+        studentId,
+        amount,
+        reason,
+        requestId,
+        operationType = 'deduction', // 'deduction' | 'reset'
+    } = body as {
         studentId?: string;
         amount?: unknown;
         reason?: string;
         requestId?: string;
+        operationType?: 'deduction' | 'reset';
     };
 
     // --- Basic Validation ---
-    if (!studentId || !amount || !reason) {
+    if (!studentId) {
         return NextResponse.json(
-            { success: false, message: 'بيانات ناقصة: studentId و amount و reason مطلوبة' },
+            { success: false, message: 'معرف الطالب مطلوب' },
             { status: 400 }
         );
     }
 
     if (!mongoose.Types.ObjectId.isValid(studentId)) {
-        return NextResponse.json({ success: false, message: 'معرف الطالب غير صحيح' }, { status: 400 });
-    }
-
-    const deductAmount = Number(amount);
-    if (isNaN(deductAmount) || deductAmount <= 0) {
         return NextResponse.json(
-            { success: false, message: 'يجب أن تكون قيمة الخصم عدداً موجباً' },
+            { success: false, message: 'معرف الطالب غير صحيح' },
             { status: 400 }
         );
     }
 
-    const trimmedReason = String(reason).trim();
+    const isReset = operationType === 'reset';
+
+    const trimmedReason = String(reason || '').trim();
     if (!trimmedReason || trimmedReason.length < 3) {
         return NextResponse.json(
-            { success: false, message: 'يجب كتابة سبب الخصم (3 أحرف على الأقل)' },
+            { success: false, message: 'يجب كتابة سبب العملية (3 أحرف على الأقل)' },
             { status: 400 }
         );
     }
@@ -55,7 +59,7 @@ async function postHandler(req: NextRequest, _ctx: unknown, admin: JWTPayload): 
     // --- Idempotency Check ---
     if (requestId) {
         const exists = await PointTransaction.findOne({
-            referenceType: `deduct_req:${requestId}`,
+            referenceType: `points_op:${requestId}`,
             student: studentId,
         }).lean();
         if (exists) {
@@ -67,7 +71,7 @@ async function postHandler(req: NextRequest, _ctx: unknown, admin: JWTPayload): 
         }
     }
 
-    // --- Fetch Student with atomic lock ---
+    // --- Fetch Student ---
     const student = await User.findOne({
         _id: studentId,
         role: 'student',
@@ -84,21 +88,45 @@ async function postHandler(req: NextRequest, _ctx: unknown, admin: JWTPayload): 
     const currentPoints = student.points || 0;
     const balanceBefore = currentPoints;
 
-    // --- Prevent going below zero ---
-    if (deductAmount > currentPoints) {
-        return NextResponse.json(
-            {
-                success: false,
-                message: `لا يمكن خصم ${deductAmount} نقطة لأن رصيد الطالب ${currentPoints} نقطة فقط`,
-                data: { currentBalance: currentPoints },
-            },
-            { status: 422 }
-        );
+    let deductAmount: number;
+
+    if (isReset) {
+        if (currentPoints <= 0) {
+            return NextResponse.json(
+                {
+                    success: false,
+                    message: 'رصيد الطالب صفر بالفعل ولا توجد نقاط لتصفيرها',
+                    data: { currentBalance: 0 },
+                },
+                { status: 400 }
+            );
+        }
+        deductAmount = currentPoints;
+    } else {
+        deductAmount = Number(amount);
+        if (isNaN(deductAmount) || deductAmount <= 0) {
+            return NextResponse.json(
+                { success: false, message: 'يجب أن تكون قيمة الخصم عدداً موجباً أكبر من صفر' },
+                { status: 400 }
+            );
+        }
+
+        // Prevent going below zero / exceeding balance
+        if (deductAmount > currentPoints) {
+            return NextResponse.json(
+                {
+                    success: false,
+                    message: `لا يمكن خصم ${deductAmount} نقطة لأن رصيد الطالب ${currentPoints} نقطة فقط`,
+                    data: { currentBalance: currentPoints },
+                },
+                { status: 422 }
+            );
+        }
     }
 
     const balanceAfter = currentPoints - deductAmount;
 
-    // --- Atomic update: only deduct if points haven't changed mid-request ---
+    // --- Atomic update: only deduct if points haven't changed below deductAmount ---
     const updated = await User.findOneAndUpdate(
         { _id: studentId, role: 'student', points: { $gte: deductAmount } },
         { $inc: { points: -deductAmount } },
@@ -107,43 +135,54 @@ async function postHandler(req: NextRequest, _ctx: unknown, admin: JWTPayload): 
 
     if (!updated) {
         return NextResponse.json(
-            { success: false, message: 'فشلت العملية — قد يكون الرصيد قد تغيّر، أعد المحاولة' },
+            { success: false, message: 'فشلت العملية — قد يكون الرصيد قد تغيّر بالتزامن، يرجى إعادة المحاولة' },
             { status: 409 }
         );
     }
+
+    const transactionReason = isReset
+        ? `[تصفير النقاط] ${trimmedReason}`
+        : `[خصم إداري] ${trimmedReason}`;
 
     // --- Record Ledger Transaction (negative amount = deduction) ---
     await PointTransaction.create({
         student: studentId,
         amount: -deductAmount,
         type: 'admin_adjustment',
-        reason: `[خصم إداري] ${trimmedReason}`,
-        balanceAfter,
+        reason: transactionReason,
+        balanceAfter: updated.points,
         createdBy: admin.userId,
-        ...(requestId ? { referenceType: `deduct_req:${requestId}` } : {}),
+        ...(requestId ? { referenceType: `points_op:${requestId}` } : {}),
     });
 
     // --- Audit Log ---
+    const auditAction = isReset ? AUDIT_ACTIONS.POINTS_RESET : AUDIT_ACTIONS.POINTS_DEDUCTED;
     await createAuditLog({
         actor: admin.userId,
         actorRole: 'admin',
-        action: AUDIT_ACTIONS.POINTS_DEDUCTED,
+        action: auditAction,
         target: studentId,
         targetModel: 'User',
         metadata: {
+            operationType: isReset ? 'reset' : 'deduction',
             studentName: student.name,
             balanceBefore,
-            balanceAfter,
+            balanceAfter: updated.points,
             deductedAmount: deductAmount,
             reason: trimmedReason,
             requestId: requestId ?? null,
         },
     });
 
+    const successMessage = isReset
+        ? `تم تصفير نقاط الطالب ${student.name} بنجاح (تم خصم ${deductAmount} نقطة)`
+        : `تم خصم ${deductAmount} نقطة من رصيد الطالب ${student.name} بنجاح`;
+
     return NextResponse.json({
         success: true,
-        message: `تم خصم ${deductAmount} نقطة من رصيد الطالب بنجاح`,
+        message: successMessage,
         data: {
+            operationType: isReset ? 'reset' : 'deduction',
             studentName: student.name,
             balanceBefore,
             balanceAfter: updated.points,

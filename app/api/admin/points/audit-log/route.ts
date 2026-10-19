@@ -14,32 +14,44 @@ async function getHandler(req: NextRequest, _ctx: unknown, _admin: JWTPayload): 
     const studentId = searchParams.get('studentId');
 
     const filter: Record<string, unknown> = {
-        action: AUDIT_ACTIONS.POINTS_DEDUCTED,
+        action: { $in: [AUDIT_ACTIONS.POINTS_DEDUCTED, AUDIT_ACTIONS.POINTS_RESET, AUDIT_ACTIONS.POINTS_ADJUSTED] },
     };
     if (studentId) filter.target = studentId;
 
     const [total, logs] = await Promise.all([
         AuditLog.countDocuments(filter),
         AuditLog.find(filter)
-            .populate('actor', 'name')
-            .populate('target', 'name')
+            .populate('actor', 'name phone')
+            .populate('target', 'name phone')
             .sort({ createdAt: -1 })
             .skip((page - 1) * limit)
             .limit(limit)
             .lean(),
     ]);
 
-    const formatted = logs.map((log: any) => ({
-        id: log._id,
-        actor: log.actor?.name ?? log.actor ?? '—',
-        studentName: log.metadata?.studentName ?? (log.target as any)?.name ?? '—',
-        studentId: log.target?.toString() ?? '—',
-        balanceBefore: log.metadata?.balanceBefore ?? 0,
-        balanceAfter: log.metadata?.balanceAfter ?? 0,
-        deductedAmount: log.metadata?.deductedAmount ?? 0,
-        reason: log.metadata?.reason ?? '—',
-        createdAt: log.createdAt,
-    }));
+    const formatted = logs.map((log: any) => {
+        const metadata = log.metadata || {};
+        let operationType: 'deduction' | 'reset' | 'adjustment' = 'deduction';
+        if (log.action === AUDIT_ACTIONS.POINTS_RESET || metadata.operationType === 'reset') {
+            operationType = 'reset';
+        } else if (log.action === AUDIT_ACTIONS.POINTS_ADJUSTED) {
+            operationType = 'adjustment';
+        }
+
+        return {
+            id: log._id.toString(),
+            actorId: log.actor?._id?.toString() || (typeof log.actor === 'string' ? log.actor : '—'),
+            actorName: log.actor?.name || 'الأدمن',
+            studentId: log.target?._id?.toString() || log.target?.toString() || metadata.studentId || '—',
+            studentName: metadata.studentName || log.target?.name || '—',
+            operationType,
+            balanceBefore: metadata.balanceBefore ?? 0,
+            deductedAmount: metadata.deductedAmount ?? metadata.amount ?? 0,
+            balanceAfter: metadata.balanceAfter ?? metadata.newBalance ?? 0,
+            reason: metadata.reason || '—',
+            createdAt: log.createdAt,
+        };
+    });
 
     return NextResponse.json({
         success: true,

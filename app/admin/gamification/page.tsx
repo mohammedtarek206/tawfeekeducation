@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
+import { gradeLabel } from '@/lib/constants/grades';
 
 /* ─── Types ─── */
 interface Student {
@@ -9,13 +10,16 @@ interface Student {
     phone: string;
     points: number;
     grade?: string;
+    level?: number;
 }
 
 interface AuditEntry {
     id: string;
-    actor: string;
-    studentName: string;
+    actorId: string;
+    actorName: string;
     studentId: string;
+    studentName: string;
+    operationType: 'deduction' | 'reset' | 'adjustment';
     balanceBefore: number;
     balanceAfter: number;
     deductedAmount: number;
@@ -24,7 +28,8 @@ interface AuditEntry {
 }
 
 interface Transaction {
-    id: string;
+    _id?: string;
+    id?: string;
     amount: number;
     type: string;
     reason: string;
@@ -42,9 +47,13 @@ interface OverviewData {
 
 /* ─── Helpers ─── */
 function formatDate(d: string) {
+    if (!d) return '—';
     return new Date(d).toLocaleDateString('ar-EG', {
-        year: 'numeric', month: 'short', day: 'numeric',
-        hour: '2-digit', minute: '2-digit',
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
     });
 }
 
@@ -52,13 +61,32 @@ function generateRequestId() {
     return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
+function getTransactionTypeLabel(type: string) {
+    const labels: Record<string, string> = {
+        lesson_completed: 'إكمال حصة',
+        quiz_completed: 'اختبار حصة',
+        exam_completed: 'امتحان',
+        referral: 'مكافأة دعوة صديق',
+        reward_redeemed: 'استبدال جائزة',
+        admin_adjustment: 'تعديل إداري',
+        streak_bonus: 'مداومة مستمرة',
+        lesson_watch: 'مشاهدة حصة',
+        bonus: 'مكافأة إضافية',
+        task_completion: 'إنجاز مهمة',
+        achievement: 'وسام إنجاز',
+    };
+    return labels[type] || type || 'معاملة';
+}
+
 /* ─── Subcomponents ─── */
 function StatCard({ emoji, value, label }: { emoji: string; value: string | number; label: string }) {
     return (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+        <div className="bg-white rounded-3xl border border-gray-100 shadow-sm p-6">
             <div className="text-3xl mb-2" suppressHydrationWarning>{emoji}</div>
-            <div className="text-3xl font-black text-gray-900" suppressHydrationWarning>{typeof value === 'number' ? value.toLocaleString() : value}</div>
-            <div className="text-sm font-medium text-gray-500 mt-1">{label}</div>
+            <div className="text-3xl font-black text-gray-900" suppressHydrationWarning>
+                {typeof value === 'number' ? value.toLocaleString() : value}
+            </div>
+            <div className="text-sm font-semibold text-gray-500 mt-1">{label}</div>
         </div>
     );
 }
@@ -74,11 +102,19 @@ export default function AdminGamificationPage() {
     const [studentsLoading, setStudentsLoading] = useState(false);
     const [search, setSearch] = useState('');
     const [selected, setSelected] = useState<Student | null>(null);
+
+    // Selected student transactions
+    const [studentTransactions, setStudentTransactions] = useState<Transaction[]>([]);
+    const [txLoading, setTxLoading] = useState(false);
+
+    // Deduct / Reset state
+    const [operationType, setOperationType] = useState<'deduction' | 'reset'>('deduction');
     const [deductAmount, setDeductAmount] = useState('');
     const [deductReason, setDeductReason] = useState('');
-    const [showConfirm, setShowConfirm] = useState(false);
-    const [deducting, setDeducting] = useState(false);
-    const [deductMsg, setDeductMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+    const [resetReason, setResetReason] = useState('');
+    const [showConfirmModal, setShowConfirmModal] = useState(false);
+    const [submitting, setSubmitting] = useState(false);
+    const [actionMsg, setActionMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
     const requestIdRef = useRef<string>(generateRequestId());
 
     /* — Audit Log State — */
@@ -94,25 +130,12 @@ export default function AdminGamificationPage() {
             const res = await fetch('/api/admin/points');
             const json = await res.json();
             if (json.success) setOverview(json.data);
-        } catch { }
+        } catch {}
         setOverviewLoading(false);
     }, []);
 
-    /* ─── Fetch Students ─── */
-    const loadStudents = useCallback(async () => {
-        setStudentsLoading(true);
-        try {
-            const res = await fetch('/api/admin/points');
-            const json = await res.json();
-            if (json.success) {
-                setStudents(json.data.topStudents || []);
-            }
-        } catch { }
-        setStudentsLoading(false);
-    }, []);
-
-    /* ─── Fetch all students for manage tab ─── */
-    const loadAllStudents = useCallback(async (q: string) => {
+    /* ─── Fetch Students for manage tab ─── */
+    const loadStudents = useCallback(async (q: string) => {
         setStudentsLoading(true);
         try {
             const params = new URLSearchParams({ status: 'approved', limit: '100' });
@@ -120,8 +143,24 @@ export default function AdminGamificationPage() {
             const res = await fetch(`/api/admin/students?${params}`);
             const json = await res.json();
             if (json.success) setStudents(json.data?.students || []);
-        } catch { }
+        } catch {}
         setStudentsLoading(false);
+    }, []);
+
+    /* ─── Fetch selected student's history ─── */
+    const loadStudentHistory = useCallback(async (studentId: string) => {
+        setTxLoading(true);
+        try {
+            const res = await fetch(`/api/admin/points?studentId=${studentId}&limit=50`);
+            const json = await res.json();
+            if (json.success) {
+                setStudentTransactions(json.data.transactions || []);
+                if (json.data.student) {
+                    setSelected((prev) => (prev ? { ...prev, ...json.data.student } : null));
+                }
+            }
+        } catch {}
+        setTxLoading(false);
     }, []);
 
     /* ─── Fetch Audit Log ─── */
@@ -131,155 +170,212 @@ export default function AdminGamificationPage() {
             const res = await fetch(`/api/admin/points/audit-log?page=${page}&limit=20`);
             const json = await res.json();
             if (json.success) {
-                setAuditLogs(json.data.logs);
-                setAuditTotal(json.data.total);
+                setAuditLogs(json.data.logs || []);
+                setAuditTotal(json.data.total || 0);
             }
-        } catch { }
+        } catch {}
         setAuditLoading(false);
     }, []);
 
-    useEffect(() => { loadOverview(); }, [loadOverview]);
+    useEffect(() => {
+        loadOverview();
+    }, [loadOverview]);
 
     useEffect(() => {
-        if (tab === 'manage') loadAllStudents(search);
+        if (tab === 'manage') loadStudents(search);
         if (tab === 'audit') loadAudit(auditPage);
-    }, [tab]);
+    }, [tab, loadStudents, loadAudit, search, auditPage]);
 
-    /* ─── Search Students ─── */
-    const handleSearch = useCallback((q: string) => {
+    /* ─── Select Student ─── */
+    const handleSelectStudent = (s: Student) => {
+        setSelected(s);
+        setActionMsg(null);
+        setDeductAmount('');
+        setDeductReason('');
+        setResetReason('');
+        loadStudentHistory(s._id);
+    };
+
+    /* ─── Search ─── */
+    const handleSearch = (q: string) => {
         setSearch(q);
         setSelected(null);
-        loadAllStudents(q);
-    }, [loadAllStudents]);
+        setStudentTransactions([]);
+        loadStudents(q);
+    };
 
     /* ─── Validation ─── */
-    const parsedAmount = parseInt(deductAmount);
-    const canDeduct = selected
-        && deductAmount
-        && !isNaN(parsedAmount)
-        && parsedAmount > 0
-        && parsedAmount <= (selected.points || 0)
-        && deductReason.trim().length >= 3;
+    const parsedDeductAmount = parseInt(deductAmount, 10);
+    const canDeduct =
+        selected &&
+        !isNaN(parsedDeductAmount) &&
+        parsedDeductAmount > 0 &&
+        parsedDeductAmount <= (selected.points || 0) &&
+        deductReason.trim().length >= 3;
 
-    /* ─── Deduct Handler ─── */
-    const handleDeduct = async () => {
-        if (!selected || !canDeduct) return;
-        setDeducting(true);
-        setDeductMsg(null);
+    const canReset =
+        selected &&
+        (selected.points || 0) > 0 &&
+        resetReason.trim().length >= 3;
+
+    /* ─── Execute Deduction or Reset ─── */
+    const handleExecuteOperation = async () => {
+        if (!selected) return;
+
+        const isReset = operationType === 'reset';
+        if (isReset && !canReset) return;
+        if (!isReset && !canDeduct) return;
+
+        setSubmitting(true);
+        setActionMsg(null);
+
         try {
             const res = await fetch('/api/admin/points/deduct', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     studentId: selected._id,
-                    amount: parsedAmount,
-                    reason: deductReason.trim(),
+                    operationType,
+                    amount: isReset ? selected.points : parsedDeductAmount,
+                    reason: (isReset ? resetReason : deductReason).trim(),
                     requestId: requestIdRef.current,
                 }),
             });
+
             const json = await res.json();
+
             if (json.success) {
-                setDeductMsg({ type: 'success', text: json.message });
-                // Refresh student's balance in list
-                setStudents(prev =>
-                    prev.map(s => s._id === selected._id ? { ...s, points: json.data.balanceAfter } : s)
+                const newBalance = json.data?.balanceAfter ?? (isReset ? 0 : selected.points - parsedDeductAmount);
+                setActionMsg({ type: 'success', text: json.message });
+
+                // Update selected student in state
+                setSelected((prev) => (prev ? { ...prev, points: newBalance } : null));
+
+                // Update student in list
+                setStudents((prev) =>
+                    prev.map((s) => (s._id === selected._id ? { ...s, points: newBalance } : s))
                 );
-                setSelected(prev => prev ? { ...prev, points: json.data.balanceAfter } : null);
+
+                // Reset inputs and modal
                 setDeductAmount('');
                 setDeductReason('');
-                requestIdRef.current = generateRequestId(); // new id for next request
-                setShowConfirm(false);
-                // Refresh overview
+                setResetReason('');
+                requestIdRef.current = generateRequestId();
+                setShowConfirmModal(false);
+
+                // Refresh transactions and overview
+                await loadStudentHistory(selected._id);
                 loadOverview();
             } else {
-                setDeductMsg({ type: 'error', text: json.message || 'فشلت العملية' });
+                setActionMsg({ type: 'error', text: json.message || 'فشلت العملية' });
             }
         } catch {
-            setDeductMsg({ type: 'error', text: 'خطأ في الاتصال بالخادم' });
+            setActionMsg({ type: 'error', text: 'خطأ في الاتصال بالخادم أثناء تنفيذ العملية' });
+        } finally {
+            setSubmitting(false);
         }
-        setDeducting(false);
     };
 
-    const filteredStudents = students.filter(s =>
-        !search || s.name.includes(search) || s._id.includes(search)
-    );
-
     const TABS = [
-        { key: 'overview', label: '📊 النقاط والسجلات' },
-        { key: 'manage', label: '📉 إدارة النقاط' },
-        { key: 'audit', label: '📋 سجل الخصومات' },
+        { key: 'overview', label: '📊 ملخص النقاط' },
+        { key: 'manage', label: '📉 إدارة وخصم النقاط' },
+        { key: 'audit', label: '📋 سجل التدقيق والخصومات' },
     ] as const;
 
     return (
         <div className="space-y-6" dir="rtl">
             <div>
-                <h1 className="text-2xl font-bold text-gray-900">إدارة النقاط والمكافآت</h1>
-                <p className="text-gray-500 mt-1">متابعة نظام النقاط وإدارة رصيد الطلاب</p>
+                <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+                    <span>🪙</span>
+                    <span>إدارة النقاط والتدقيق</span>
+                </h1>
+                <p className="text-gray-500 text-sm mt-1">
+                    متابعة أرصدة الطلاب، خصم وتصفير النقاط بأمان، واستعراض سجل التدقيق الموثق
+                </p>
             </div>
 
             {/* Tab Switcher */}
             <div className="flex border-b border-gray-200">
-                {TABS.map(t => (
+                {TABS.map((t) => (
                     <button
                         key={t.key}
                         onClick={() => setTab(t.key)}
-                        className={`px-5 py-3 text-sm font-bold transition-all border-b-2 -mb-px ${tab === t.key
-                            ? 'border-green-700 text-green-800'
-                            : 'border-transparent text-gray-500 hover:text-gray-800'
-                            }`}
+                        className={`px-5 py-3 text-sm font-bold transition-all border-b-2 -mb-px ${
+                            tab === t.key
+                                ? 'border-forest text-forest'
+                                : 'border-transparent text-gray-500 hover:text-gray-800'
+                        }`}
                     >
                         {t.label}
                     </button>
                 ))}
             </div>
 
-            {/* ─── TAB: Overview ─── */}
+            {/* ─── TAB 1: OVERVIEW ─── */}
             {tab === 'overview' && (
                 <div className="space-y-6">
                     {overviewLoading ? (
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                            {[1, 2, 3].map(i => <div key={i} className="h-28 bg-gray-100 rounded-2xl animate-pulse" />)}
+                            {[1, 2, 3].map((i) => (
+                                <div key={i} className="h-28 bg-gray-100 rounded-3xl animate-pulse" />
+                            ))}
                         </div>
                     ) : !overview ? (
-                        <div className="text-center py-16 bg-white rounded-2xl border border-gray-100 text-gray-500">
-                            لا يوجد بيانات
+                        <div className="text-center py-16 bg-white rounded-3xl border border-gray-100 text-gray-500">
+                            لا توجد بيانات متاحة
                         </div>
                     ) : (
                         <>
                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                                 <StatCard emoji="🪙" value={overview.totalPointsAwarded} label="إجمالي النقاط الممنوحة" />
-                                <StatCard emoji="🏆" value={overview.topStudents?.length ?? 0} label="طلاب في المتصدرين" />
-                                <StatCard emoji="📊" value={overview.totalTransactions} label="إجمالي المعاملات" />
+                                <StatCard emoji="🏆" value={overview.topStudents?.length ?? 0} label="طلاب في الصدارة" />
+                                <StatCard emoji="📊" value={overview.totalTransactions} label="إجمالي الحركات المسجلة" />
                             </div>
 
-                            {/* Top Students */}
-                            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                            {/* Top Students by points */}
+                            <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
                                 <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-                                    <h2 className="font-bold text-gray-900">🏆 قائمة المتصدرين</h2>
+                                    <h2 className="font-bold text-gray-900 flex items-center gap-2">
+                                        <span>🏆</span>
+                                        <span>أعلى الطلاب نقاطًا في المنظومة</span>
+                                    </h2>
                                     <button
                                         onClick={() => setTab('manage')}
-                                        className="text-xs text-green-800 font-bold hover:underline"
+                                        className="text-xs text-forest font-bold hover:underline"
                                     >
-                                        إدارة النقاط ←
+                                        إدارة رصيد طالب ←
                                     </button>
                                 </div>
                                 {!overview.topStudents?.length ? (
-                                    <div className="text-center py-12 text-gray-500">لا يوجد بيانات</div>
+                                    <div className="text-center py-12 text-gray-500">لا توجد بيانات</div>
                                 ) : (
                                     <div className="divide-y divide-gray-50">
                                         {overview.topStudents.map((s: Student, i: number) => (
-                                            <div key={s._id} className="px-6 py-4 flex items-center gap-4">
-                                                <div className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-sm flex-shrink-0
-                          ${i === 0 ? 'bg-yellow-100 text-yellow-700' : i === 1 ? 'bg-gray-100 text-gray-600' : i === 2 ? 'bg-orange-100 text-orange-700' : 'bg-gray-50 text-gray-500'}`}>
+                                            <div key={s._id} className="px-6 py-4 flex items-center gap-4 hover:bg-gray-50/50">
+                                                <div
+                                                    className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-sm flex-shrink-0 ${
+                                                        i === 0
+                                                            ? 'bg-amber-100 text-amber-800'
+                                                            : i === 1
+                                                            ? 'bg-slate-200 text-slate-700'
+                                                            : i === 2
+                                                            ? 'bg-orange-100 text-orange-800'
+                                                            : 'bg-gray-100 text-gray-600'
+                                                    }`}
+                                                >
                                                     {i + 1}
                                                 </div>
                                                 <div className="flex-1">
                                                     <div className="font-bold text-gray-900">{s.name}</div>
-                                                    <div className="text-xs text-gray-400">{s.grade || '—'}</div>
+                                                    <div className="text-xs text-gray-400">
+                                                        {gradeLabel(s.grade) || '—'} • المعرف: {s._id}
+                                                    </div>
                                                 </div>
-                                                <div className="text-right">
-                                                    <div className="font-black text-green-800" suppressHydrationWarning>{s.points?.toLocaleString()}</div>
-                                                    <div className="text-xs text-gray-500">نقطة</div>
+                                                <div className="text-left">
+                                                    <div className="font-black text-forest text-base">
+                                                        {s.points?.toLocaleString()}
+                                                    </div>
+                                                    <div className="text-xs text-gray-400">نقطة</div>
                                                 </div>
                                             </div>
                                         ))}
@@ -289,28 +385,50 @@ export default function AdminGamificationPage() {
 
                             {/* Recent Transactions */}
                             {overview.transactions?.length > 0 && (
-                                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                                <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
                                     <div className="px-6 py-4 border-b border-gray-100">
-                                        <h2 className="font-bold text-gray-900">📜 آخر المعاملات</h2>
+                                        <h2 className="font-bold text-gray-900 flex items-center gap-2">
+                                            <span>📜</span>
+                                            <span>أحدث حركات النقاط العامة</span>
+                                        </h2>
                                     </div>
                                     <div className="divide-y divide-gray-50">
-                                        {overview.transactions.slice(0, 10).map((t: Transaction) => (
-                                            <div key={t.id} className="px-6 py-3 flex items-center gap-4 text-sm">
-                                                <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold flex-shrink-0 ${t.amount > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
-                                                    {t.amount > 0 ? '＋' : '－'}
-                                                </div>
-                                                <div className="flex-1">
-                                                    <div className="font-medium text-gray-900">{t.student?.name || '—'}</div>
-                                                    <div className="text-xs text-gray-400">{t.reason}</div>
-                                                </div>
-                                                <div className="text-right">
-                                                    <div className={`font-black ${t.amount > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                                        {t.amount > 0 ? `+${t.amount}` : t.amount}
+                                        {overview.transactions.slice(0, 10).map((t: Transaction, idx: number) => {
+                                            const isPositive = t.amount > 0;
+                                            return (
+                                                <div key={t.id || t._id || idx} className="px-6 py-3.5 flex items-center gap-4 text-sm">
+                                                    <div
+                                                        className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold flex-shrink-0 ${
+                                                            isPositive
+                                                                ? 'bg-emerald-100 text-emerald-800'
+                                                                : 'bg-rose-100 text-rose-800'
+                                                        }`}
+                                                    >
+                                                        {isPositive ? '＋' : '－'}
                                                     </div>
-                                                    <div className="text-[10px] text-gray-400">{formatDate(t.createdAt)}</div>
+                                                    <div className="flex-1">
+                                                        <div className="font-bold text-gray-900">
+                                                            {t.student?.name || 'طالب'}
+                                                        </div>
+                                                        <div className="text-xs text-gray-400">
+                                                            {t.reason} ({getTransactionTypeLabel(t.type)})
+                                                        </div>
+                                                    </div>
+                                                    <div className="text-left">
+                                                        <div
+                                                            className={`font-black ${
+                                                                isPositive ? 'text-emerald-600' : 'text-rose-600'
+                                                            }`}
+                                                        >
+                                                            {isPositive ? `+${t.amount}` : t.amount}
+                                                        </div>
+                                                        <div className="text-[11px] text-gray-400">
+                                                            {formatDate(t.createdAt)}
+                                                        </div>
+                                                    </div>
                                                 </div>
-                                            </div>
-                                        ))}
+                                            );
+                                        })}
                                     </div>
                                 </div>
                             )}
@@ -319,236 +437,460 @@ export default function AdminGamificationPage() {
                 </div>
             )}
 
-            {/* ─── TAB: Manage Points ─── */}
+            {/* ─── TAB 2: MANAGE & DEDUCT POINTS ─── */}
             {tab === 'manage' && (
-                <div className="space-y-5">
-                    <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-sm text-amber-800 flex gap-3">
-                        <span className="text-xl flex-shrink-0">⚠️</span>
-                        <div>
-                            <strong>تنبيه:</strong> خصم النقاط عملية لا يمكن التراجع عنها. تأكد من صحة البيانات قبل التأكيد. جميع العمليات مُسجَّلة في سجل التدقيق.
+                <div className="space-y-6">
+                    {/* Notice */}
+                    <div className="bg-amber-50 border border-amber-200 rounded-3xl p-4 text-sm text-amber-900 flex gap-3 shadow-xs">
+                        <span className="text-2xl flex-shrink-0">⚠️</span>
+                        <div className="leading-relaxed">
+                            <strong>ضوابط إدارة النقاط:</strong> خصم النقاط أو تصفيرها عمليات إدارية رسمية تؤثر على الرصيد الفعلي للطالب ولا يمكن التراجع عنها تلقائيًا. لا يؤدي الخصم أو التصفير إلى حذف حساب الطالب أو تقدمه في الدروس، ويتم توثيق كل عملية في سجل التدقيق غير القابل للتعديل.
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        {/* Student Selection */}
-                        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm">
-                            <div className="px-5 py-4 border-b border-gray-100">
-                                <h2 className="font-bold text-gray-900">🔍 اختر الطالب</h2>
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                        {/* Student Search & List Column */}
+                        <div className="lg:col-span-5 bg-white rounded-3xl border border-gray-100 shadow-sm p-5 space-y-4">
+                            <div>
+                                <h2 className="font-bold text-gray-900 flex items-center gap-2">
+                                    <span>🔍</span>
+                                    <span>البحث واختيار الطالب</span>
+                                </h2>
+                                <p className="text-xs text-gray-400 mt-1">
+                                    ابحث بالاسم، رقم الهاتف، أو معرف الطالب
+                                </p>
                             </div>
-                            <div className="p-5 space-y-3">
-                                <input
-                                    type="text"
-                                    placeholder="ابحث بالاسم..."
-                                    value={search}
-                                    onChange={e => handleSearch(e.target.value)}
-                                    className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30 focus:border-green-500"
-                                />
-                                <div className="max-h-80 overflow-y-auto space-y-1">
-                                    {studentsLoading ? (
-                                        <div className="text-center py-8">
-                                            <div className="inline-block w-6 h-6 border-2 border-green-600 border-t-transparent rounded-full animate-spin" />
-                                        </div>
-                                    ) : filteredStudents.length === 0 ? (
-                                        <div className="text-center py-8 text-gray-400 text-sm">لا يوجد طلاب</div>
-                                    ) : (
-                                        filteredStudents.map(s => (
-                                            <button
-                                                key={s._id}
-                                                onClick={() => { setSelected(s); setDeductMsg(null); setDeductAmount(''); setDeductReason(''); }}
-                                                className={`w-full text-right px-4 py-3 rounded-xl text-sm transition-all flex items-center justify-between gap-3 ${selected?._id === s._id
-                                                    ? 'bg-green-100 border-2 border-green-500 text-green-900'
+
+                            <input
+                                type="text"
+                                placeholder="ابحث بالاسم أو الهاتف أو المعرف..."
+                                value={search}
+                                onChange={(e) => handleSearch(e.target.value)}
+                                className="w-full border border-gray-200 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-forest/30 focus:border-forest"
+                            />
+
+                            <div className="max-h-[500px] overflow-y-auto space-y-1.5 divide-y divide-gray-50">
+                                {studentsLoading ? (
+                                    <div className="text-center py-10">
+                                        <div className="w-6 h-6 border-2 border-forest border-t-transparent rounded-full animate-spin mx-auto" />
+                                    </div>
+                                ) : students.length === 0 ? (
+                                    <div className="text-center py-10 text-gray-400 text-sm">
+                                        لا يوجد طلاب مطابقون
+                                    </div>
+                                ) : (
+                                    students.map((s) => (
+                                        <button
+                                            key={s._id}
+                                            type="button"
+                                            onClick={() => handleSelectStudent(s)}
+                                            className={`w-full text-right p-3 rounded-2xl text-sm transition-all flex items-center justify-between gap-3 ${
+                                                selected?._id === s._id
+                                                    ? 'bg-forest/10 border-2 border-forest text-forest'
                                                     : 'hover:bg-gray-50 border-2 border-transparent text-gray-700'
-                                                    }`}
-                                            >
-                                                <div>
-                                                    <div className="font-bold">{s.name}</div>
-                                                    <div className="text-xs text-gray-400">{s.grade || '—'}</div>
+                                            }`}
+                                        >
+                                            <div className="truncate">
+                                                <div className="font-bold truncate">{s.name}</div>
+                                                <div className="text-xs text-gray-400">
+                                                    {s.phone} • {gradeLabel(s.grade) || 'طالب'}
                                                 </div>
-                                                <div className="text-right flex-shrink-0">
-                                                    <div className="font-black text-green-800">{(s.points || 0).toLocaleString()}</div>
-                                                    <div className="text-[10px] text-gray-400">نقطة</div>
+                                                <div className="text-[10px] text-gray-400 font-mono">
+                                                    ID: {s._id}
                                                 </div>
-                                            </button>
-                                        ))
-                                    )}
-                                </div>
+                                            </div>
+                                            <div className="text-left shrink-0">
+                                                <div className="font-black text-forest">
+                                                    {(s.points || 0).toLocaleString()}
+                                                </div>
+                                                <div className="text-[10px] text-gray-400">نقطة</div>
+                                            </div>
+                                        </button>
+                                    ))
+                                )}
                             </div>
                         </div>
 
-                        {/* Deduct Form */}
-                        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm">
-                            <div className="px-5 py-4 border-b border-gray-100">
-                                <h2 className="font-bold text-gray-900">📉 خصم النقاط</h2>
-                            </div>
-                            <div className="p-5 space-y-4">
-                                {!selected ? (
-                                    <div className="text-center py-12 text-gray-400 text-sm">
-                                        <div className="text-4xl mb-2">👆</div>
-                                        اختر طالباً من القائمة اليسار
-                                    </div>
-                                ) : (
-                                    <>
-                                        {/* Selected Student Info */}
-                                        <div className="bg-green-50 border border-green-200 rounded-xl p-4">
-                                            <div className="text-sm text-green-700 font-medium mb-1">الطالب المحدد</div>
-                                            <div className="font-black text-green-900 text-lg">{selected.name}</div>
-                                            <div className="text-sm text-green-700 mt-1">
-                                                الرصيد الحالي: <strong>{(selected.points || 0).toLocaleString()} نقطة</strong>
+                        {/* Student Details & Deduction Controls */}
+                        <div className="lg:col-span-7 space-y-6">
+                            {!selected ? (
+                                <div className="bg-white rounded-3xl border border-gray-100 p-16 text-center shadow-sm">
+                                    <div className="text-5xl mb-3">👆</div>
+                                    <h3 className="font-bold text-gray-800 text-base">
+                                        اختر طالباً من القائمة للبدء
+                                    </h3>
+                                    <p className="text-xs text-gray-400 mt-1">
+                                        يمكنك الاطلاع على تفاصيل رصيده، سجل نقاطه، وخصم أو تصفير النقاط
+                                    </p>
+                                </div>
+                            ) : (
+                                <>
+                                    {/* Selected Student Card */}
+                                    <div className="bg-white rounded-3xl border border-gray-100 p-6 shadow-sm space-y-4">
+                                        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-gray-100 pb-4">
+                                            <div>
+                                                <span className="text-[11px] font-bold text-forest bg-forest/10 px-2.5 py-1 rounded-full inline-block mb-1">
+                                                    بيانات الطالب المحدد
+                                                </span>
+                                                <h3 className="text-xl font-black text-gray-900">{selected.name}</h3>
+                                                <p className="text-xs text-gray-400 mt-0.5 font-mono">
+                                                    المعرف: {selected._id} • الهاتف: {selected.phone}
+                                                </p>
+                                            </div>
+
+                                            <div className="bg-amber-50 border border-amber-200 rounded-2xl px-5 py-3 text-center">
+                                                <span className="text-xs text-amber-800 font-bold block">
+                                                    الرصيد الحالي
+                                                </span>
+                                                <span className="text-2xl font-black text-amber-900">
+                                                    {(selected.points || 0).toLocaleString()}
+                                                </span>
+                                                <span className="text-xs text-amber-800 font-semibold mr-1">نقطة</span>
                                             </div>
                                         </div>
 
-                                        {/* Amount Input */}
-                                        <div>
-                                            <label className="block text-sm font-bold text-gray-700 mb-1.5">
-                                                عدد النقاط المراد خصمها <span className="text-red-500">*</span>
-                                            </label>
-                                            <input
-                                                type="number"
-                                                min="1"
-                                                max={selected.points || 0}
-                                                placeholder="أدخل عدد النقاط..."
-                                                value={deductAmount}
-                                                onChange={e => setDeductAmount(e.target.value)}
-                                                className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500/30 focus:border-rose-400"
-                                            />
-                                            {deductAmount && !isNaN(parsedAmount) && parsedAmount > (selected.points || 0) && (
-                                                <p className="text-xs text-red-600 mt-1 font-bold">
-                                                    ⛔ الرصيد ({selected.points}) أقل من المبلغ المطلوب خصمه
-                                                </p>
-                                            )}
-                                            {deductAmount && !isNaN(parsedAmount) && parsedAmount > 0 && parsedAmount <= (selected.points || 0) && (
-                                                <p className="text-xs text-green-700 mt-1 font-semibold">
-                                                    ✔ الرصيد بعد الخصم: {(selected.points - parsedAmount).toLocaleString()} نقطة
-                                                </p>
-                                            )}
-                                            {/* Quick deduct all */}
-                                            {(selected.points || 0) > 0 && (
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setDeductAmount(String(selected.points))}
-                                                    className="mt-1.5 text-xs text-rose-600 font-bold hover:underline"
-                                                >
-                                                    خصم جميع النقاط ({selected.points})
-                                                </button>
-                                            )}
-                                        </div>
-
-                                        {/* Reason Input */}
-                                        <div>
-                                            <label className="block text-sm font-bold text-gray-700 mb-1.5">
-                                                سبب الخصم <span className="text-red-500">*</span>
-                                            </label>
-                                            <textarea
-                                                rows={3}
-                                                placeholder="اكتب سبب الخصم هنا (سيتم تسجيله في سجل التدقيق)..."
-                                                value={deductReason}
-                                                onChange={e => setDeductReason(e.target.value)}
-                                                className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500/30 focus:border-rose-400 resize-none"
-                                            />
-                                            <div className="text-[11px] text-gray-400 mt-0.5 text-left">{deductReason.trim().length}/200</div>
-                                        </div>
-
-                                        {/* Feedback */}
-                                        {deductMsg && (
-                                            <div className={`rounded-xl px-4 py-3 text-sm font-bold ${deductMsg.type === 'success' ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
-                                                {deductMsg.type === 'success' ? '✅' : '❌'} {deductMsg.text}
+                                        {/* Action Message */}
+                                        {actionMsg && (
+                                            <div
+                                                className={`p-3.5 rounded-2xl text-xs font-bold flex items-center gap-2 ${
+                                                    actionMsg.type === 'success'
+                                                        ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                                                        : 'bg-red-50 text-red-800 border border-red-200'
+                                                }`}
+                                            >
+                                                <span>{actionMsg.type === 'success' ? '✅' : '❌'}</span>
+                                                <span>{actionMsg.text}</span>
                                             </div>
                                         )}
 
-                                        {/* Deduct Button */}
-                                        <button
-                                            type="button"
-                                            disabled={!canDeduct}
-                                            onClick={() => setShowConfirm(true)}
-                                            className="w-full py-3 bg-rose-600 hover:bg-rose-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black rounded-xl transition-colors flex items-center justify-center gap-2"
-                                        >
-                                            📉 خصم النقاط
-                                        </button>
-                                    </>
-                                )}
-                            </div>
+                                        {/* Operation Forms */}
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                                            {/* Deduction Card */}
+                                            <div className="bg-gray-50/70 border border-gray-200 rounded-2xl p-4 space-y-3">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-lg">📉</span>
+                                                    <h4 className="font-bold text-gray-900 text-sm">
+                                                        خصم عدد محدد من النقاط
+                                                    </h4>
+                                                </div>
+
+                                                <div>
+                                                    <label className="block text-xs font-bold text-gray-700 mb-1">
+                                                        عدد النقاط المراد خصمها <span className="text-red-500">*</span>
+                                                    </label>
+                                                    <input
+                                                        type="number"
+                                                        min="1"
+                                                        max={selected.points || 0}
+                                                        placeholder="أدخل العدد..."
+                                                        value={deductAmount}
+                                                        onChange={(e) => setDeductAmount(e.target.value)}
+                                                        className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500/30 bg-white"
+                                                    />
+                                                    {deductAmount && parsedDeductAmount > (selected.points || 0) && (
+                                                        <p className="text-[11px] text-red-600 font-bold mt-1">
+                                                            ⛔ القيمة أكبر من الرصيد المتاح ({selected.points})
+                                                        </p>
+                                                    )}
+                                                    {deductAmount && parsedDeductAmount > 0 && parsedDeductAmount <= (selected.points || 0) && (
+                                                        <p className="text-[11px] text-emerald-700 font-bold mt-1">
+                                                            ✔ الرصيد المتوقع بعد الخصم:{' '}
+                                                            {((selected.points || 0) - parsedDeductAmount).toLocaleString()} نقطة
+                                                        </p>
+                                                    )}
+                                                </div>
+
+                                                <div>
+                                                    <label className="block text-xs font-bold text-gray-700 mb-1">
+                                                        سبب الخصم (مطلوب) <span className="text-red-500">*</span>
+                                                    </label>
+                                                    <textarea
+                                                        rows={2}
+                                                        placeholder="مثال: خصم بسبب مخالفة شروط الاستخدام..."
+                                                        value={deductReason}
+                                                        onChange={(e) => setDeductReason(e.target.value)}
+                                                        className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500/30 bg-white resize-none"
+                                                    />
+                                                </div>
+
+                                                <button
+                                                    type="button"
+                                                    disabled={!canDeduct}
+                                                    onClick={() => {
+                                                        setOperationType('deduction');
+                                                        setShowConfirmModal(true);
+                                                    }}
+                                                    className="w-full py-2.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold rounded-xl text-xs transition-colors shadow-sm"
+                                                >
+                                                    مراجعة وتأكيد الخصم
+                                                </button>
+                                            </div>
+
+                                            {/* Reset Card */}
+                                            <div className="bg-red-50/50 border border-red-200 rounded-2xl p-4 space-y-3 flex flex-col justify-between">
+                                                <div className="space-y-3">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-lg">🔄</span>
+                                                        <h4 className="font-bold text-red-900 text-sm">
+                                                            تصفير نقاط الطالب بالكامل
+                                                        </h4>
+                                                    </div>
+
+                                                    <p className="text-xs text-red-700 leading-relaxed">
+                                                        سيتم خصم كامل الرصيد (<strong>{(selected.points || 0).toLocaleString()} نقطة</strong>) ليصبح الرصيد 0. لا يتم حذف الحساب أو السجل التاريخي.
+                                                    </p>
+
+                                                    <div>
+                                                        <label className="block text-xs font-bold text-red-900 mb-1">
+                                                            سبب التصفير (مطلوب) <span className="text-red-500">*</span>
+                                                        </label>
+                                                        <textarea
+                                                            rows={2}
+                                                            placeholder="سبب تصفير النقاط بالكامل..."
+                                                            value={resetReason}
+                                                            onChange={(e) => setResetReason(e.target.value)}
+                                                            className="w-full border border-red-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500/30 bg-white resize-none"
+                                                        />
+                                                    </div>
+                                                </div>
+
+                                                <button
+                                                    type="button"
+                                                    disabled={!canReset}
+                                                    onClick={() => {
+                                                        setOperationType('reset');
+                                                        setShowConfirmModal(true);
+                                                    }}
+                                                    className="w-full py-2.5 bg-red-700 hover:bg-red-800 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold rounded-xl text-xs transition-colors shadow-sm"
+                                                >
+                                                    {selected.points === 0 ? 'الرصيد صفر بالفعل' : 'تصفير النقاط (Reset)'}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Student Ledger / History */}
+                                    <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
+                                        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+                                            <h4 className="font-bold text-gray-900 text-sm flex items-center gap-2">
+                                                <span>📜</span>
+                                                <span>سجل حركات نقاط الطالب ومصادرها</span>
+                                            </h4>
+                                            <button
+                                                onClick={() => loadStudentHistory(selected._id)}
+                                                className="text-xs text-forest hover:underline font-bold"
+                                            >
+                                                تحديث السجل 🔄
+                                            </button>
+                                        </div>
+
+                                        {txLoading ? (
+                                            <div className="py-12 text-center">
+                                                <div className="w-6 h-6 border-2 border-forest border-t-transparent rounded-full animate-spin mx-auto" />
+                                            </div>
+                                        ) : studentTransactions.length === 0 ? (
+                                            <div className="py-10 text-center text-gray-400 text-xs">
+                                                لا توجد حركات نقاط مسجلة لهذا الطالب
+                                            </div>
+                                        ) : (
+                                            <div className="overflow-x-auto max-h-72">
+                                                <table className="w-full text-xs">
+                                                    <thead>
+                                                        <tr className="bg-gray-50 text-gray-500 font-bold">
+                                                            <th className="px-4 py-2.5 text-right">المعاملة / المصدر</th>
+                                                            <th className="px-4 py-2.5 text-center">المبلغ</th>
+                                                            <th className="px-4 py-2.5 text-center">الرصيد بعد</th>
+                                                            <th className="px-4 py-2.5 text-left">التاريخ</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-gray-50">
+                                                        {studentTransactions.map((tx, idx) => {
+                                                            const isPositive = tx.amount > 0;
+                                                            return (
+                                                                <tr key={tx._id || tx.id || idx} className="hover:bg-gray-50/50">
+                                                                    <td className="px-4 py-2.5">
+                                                                        <div className="font-bold text-gray-900">
+                                                                            {tx.reason}
+                                                                        </div>
+                                                                        <div className="text-[10px] text-gray-400">
+                                                                            المصدر: {getTransactionTypeLabel(tx.type)}
+                                                                        </div>
+                                                                    </td>
+                                                                    <td className="px-4 py-2.5 text-center font-bold">
+                                                                        <span
+                                                                            className={
+                                                                                isPositive
+                                                                                    ? 'text-emerald-600'
+                                                                                    : 'text-rose-600 font-black'
+                                                                            }
+                                                                        >
+                                                                            {isPositive ? `+${tx.amount}` : tx.amount}
+                                                                        </span>
+                                                                    </td>
+                                                                    <td className="px-4 py-2.5 text-center font-semibold text-gray-700">
+                                                                        {tx.balanceAfter}
+                                                                    </td>
+                                                                    <td className="px-4 py-2.5 text-left text-gray-400 text-[10px] whitespace-nowrap">
+                                                                        {formatDate(tx.createdAt)}
+                                                                    </td>
+                                                                </tr>
+                                                            );
+                                                        })}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        )}
+                                    </div>
+                                </>
+                            )}
                         </div>
                     </div>
                 </div>
             )}
 
-            {/* ─── TAB: Audit Log ─── */}
+            {/* ─── TAB 3: AUDIT LOG ─── */}
             {tab === 'audit' && (
                 <div className="space-y-4">
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
                         <div>
-                            <h2 className="font-bold text-gray-900">📋 سجل عمليات خصم النقاط</h2>
-                            <p className="text-sm text-gray-500">إجمالي {auditTotal} عملية</p>
+                            <h2 className="font-bold text-gray-900 text-lg flex items-center gap-2">
+                                <span>📋</span>
+                                <span>سجل تدقيق عمليات الخصم والتصفير</span>
+                            </h2>
+                            <p className="text-xs text-gray-400 mt-0.5">
+                                سجل موثق غير قابل للتعديل أو الحذف يعرض جميع عمليات الخصم والتصفير
+                            </p>
                         </div>
                         <button
                             onClick={() => loadAudit(auditPage)}
                             disabled={auditLoading}
-                            className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-xl text-xs font-bold hover:bg-gray-800 transition-colors"
+                            className="px-4 py-2 bg-gray-900 text-white rounded-xl text-xs font-bold hover:bg-gray-800 transition-colors flex items-center gap-1.5 shadow-sm disabled:opacity-50"
                         >
                             <span className={auditLoading ? 'animate-spin inline-block' : ''}>🔄</span>
-                            تحديث
+                            <span>تحديث السجل</span>
                         </button>
                     </div>
 
                     {auditLoading ? (
-                        <div className="text-center py-16">
-                            <div className="inline-block w-8 h-8 border-3 border-gray-300 border-t-gray-700 rounded-full animate-spin" />
+                        <div className="bg-white rounded-3xl border border-gray-100 p-16 text-center">
+                            <div className="w-8 h-8 border-3 border-gray-300 border-t-gray-800 rounded-full animate-spin mx-auto mb-3" />
+                            <p className="text-gray-400 text-xs font-semibold">جاري تحميل سجل التدقيق...</p>
                         </div>
                     ) : auditLogs.length === 0 ? (
-                        <div className="bg-white rounded-2xl border border-gray-100 p-14 text-center">
+                        <div className="bg-white rounded-3xl border border-gray-100 p-16 text-center">
                             <div className="text-4xl mb-3">📋</div>
-                            <p className="text-gray-600 font-bold">لا توجد عمليات خصم مسجّلة بعد</p>
+                            <h3 className="font-bold text-gray-800 text-base">لا توجد عمليات خصم أو تصفير مسجلة</h3>
+                            <p className="text-xs text-gray-400 mt-1">
+                                ستظهر هنا جميع العمليات المنفذة بواسطة الأدمن فور حدوثها
+                            </p>
                         </div>
                     ) : (
-                        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                        <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
                             <div className="overflow-x-auto">
                                 <table className="w-full text-sm">
                                     <thead>
-                                        <tr className="bg-gray-50 text-gray-500 text-xs font-bold text-right">
-                                            <th className="px-4 py-3">الطالب</th>
-                                            <th className="px-4 py-3 text-center">قبل</th>
-                                            <th className="px-4 py-3 text-center">الخصم</th>
-                                            <th className="px-4 py-3 text-center">بعد</th>
-                                            <th className="px-4 py-3">السبب</th>
-                                            <th className="px-4 py-3">نفّذه</th>
-                                            <th className="px-4 py-3">التاريخ</th>
+                                        <tr className="bg-gray-50/80 text-gray-500 text-xs font-bold">
+                                            <th className="px-5 py-3.5 text-right">نوع العملية</th>
+                                            <th className="px-5 py-3.5 text-right">الطالب</th>
+                                            <th className="px-5 py-3.5 text-center">الرصيد قبل</th>
+                                            <th className="px-5 py-3.5 text-center">الخصم</th>
+                                            <th className="px-5 py-3.5 text-center">الرصيد بعد</th>
+                                            <th className="px-5 py-3.5 text-right">سبب العملية</th>
+                                            <th className="px-5 py-3.5 text-right">الأدمن المنفذ</th>
+                                            <th className="px-5 py-3.5 text-left">التاريخ والوقت</th>
                                         </tr>
                                     </thead>
-                                    <tbody className="divide-y divide-gray-50">
-                                        {auditLogs.map(log => (
-                                            <tr key={log.id} className="hover:bg-gray-50/50 transition-colors">
-                                                <td className="px-4 py-3 font-bold text-gray-900">{log.studentName}</td>
-                                                <td className="px-4 py-3 text-center font-bold text-gray-700">{log.balanceBefore.toLocaleString()}</td>
-                                                <td className="px-4 py-3 text-center">
-                                                    <span className="font-black text-rose-600">−{log.deductedAmount.toLocaleString()}</span>
-                                                </td>
-                                                <td className="px-4 py-3 text-center font-bold text-green-700">{log.balanceAfter.toLocaleString()}</td>
-                                                <td className="px-4 py-3 text-gray-600 max-w-[200px] truncate" title={log.reason}>{log.reason}</td>
-                                                <td className="px-4 py-3 text-gray-500 text-xs">{log.actor}</td>
-                                                <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">{formatDate(log.createdAt)}</td>
-                                            </tr>
-                                        ))}
+                                    <tbody className="divide-y divide-gray-100">
+                                        {auditLogs.map((log) => {
+                                            const isReset = log.operationType === 'reset';
+                                            return (
+                                                <tr key={log.id} className="hover:bg-gray-50/50 transition-colors">
+                                                    {/* Operation Type Badge */}
+                                                    <td className="px-5 py-4">
+                                                        <span
+                                                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-black ${
+                                                                isReset
+                                                                    ? 'bg-red-100 text-red-800 border border-red-200'
+                                                                    : 'bg-rose-50 text-rose-700 border border-rose-200'
+                                                            }`}
+                                                        >
+                                                            <span>{isReset ? '🔄' : '📉'}</span>
+                                                            <span>{isReset ? 'تصفير كامل' : 'خصم جزئي'}</span>
+                                                        </span>
+                                                    </td>
+
+                                                    {/* Student Info */}
+                                                    <td className="px-5 py-4">
+                                                        <div className="font-bold text-gray-900">{log.studentName}</div>
+                                                        <div className="text-[10px] text-gray-400 font-mono">
+                                                            {log.studentId}
+                                                        </div>
+                                                    </td>
+
+                                                    {/* Balance Before */}
+                                                    <td className="px-5 py-4 text-center font-bold text-gray-700">
+                                                        {log.balanceBefore.toLocaleString()}
+                                                    </td>
+
+                                                    {/* Deducted Amount */}
+                                                    <td className="px-5 py-4 text-center font-black text-rose-600">
+                                                        −{log.deductedAmount.toLocaleString()}
+                                                    </td>
+
+                                                    {/* Balance After */}
+                                                    <td className="px-5 py-4 text-center font-black text-emerald-700">
+                                                        {log.balanceAfter.toLocaleString()}
+                                                    </td>
+
+                                                    {/* Reason */}
+                                                    <td className="px-5 py-4 text-xs text-gray-700 max-w-xs truncate" title={log.reason}>
+                                                        {log.reason}
+                                                    </td>
+
+                                                    {/* Admin Actor */}
+                                                    <td className="px-5 py-4 text-xs text-gray-600">
+                                                        <div className="font-bold">{log.actorName}</div>
+                                                        <div className="text-[10px] text-gray-400 font-mono">
+                                                            {log.actorId}
+                                                        </div>
+                                                    </td>
+
+                                                    {/* Date */}
+                                                    <td className="px-5 py-4 text-left text-xs text-gray-400 whitespace-nowrap">
+                                                        {formatDate(log.createdAt)}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
                                     </tbody>
                                 </table>
                             </div>
 
                             {/* Pagination */}
                             {Math.ceil(auditTotal / 20) > 1 && (
-                                <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between text-sm">
+                                <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between text-xs font-bold text-gray-600 bg-gray-50/30">
                                     <button
                                         disabled={auditPage <= 1}
-                                        onClick={() => { const p = auditPage - 1; setAuditPage(p); loadAudit(p); }}
-                                        className="px-4 py-2 rounded-lg bg-gray-100 text-gray-700 font-bold disabled:opacity-40 hover:bg-gray-200 transition-colors"
+                                        onClick={() => {
+                                            const p = auditPage - 1;
+                                            setAuditPage(p);
+                                            loadAudit(p);
+                                        }}
+                                        className="px-4 py-2 rounded-xl bg-white border border-gray-200 text-gray-700 disabled:opacity-40 hover:bg-gray-50 transition-colors shadow-2xs"
                                     >
                                         السابق
                                     </button>
-                                    <span className="text-gray-500">
-                                        صفحة {auditPage} من {Math.ceil(auditTotal / 20)}
+                                    <span>
+                                        صفحة {auditPage} من {Math.ceil(auditTotal / 20)} ({auditTotal} سجل)
                                     </span>
                                     <button
                                         disabled={auditPage >= Math.ceil(auditTotal / 20)}
-                                        onClick={() => { const p = auditPage + 1; setAuditPage(p); loadAudit(p); }}
-                                        className="px-4 py-2 rounded-lg bg-gray-100 text-gray-700 font-bold disabled:opacity-40 hover:bg-gray-200 transition-colors"
+                                        onClick={() => {
+                                            const p = auditPage + 1;
+                                            setAuditPage(p);
+                                            loadAudit(p);
+                                        }}
+                                        className="px-4 py-2 rounded-xl bg-white border border-gray-200 text-gray-700 disabled:opacity-40 hover:bg-gray-50 transition-colors shadow-2xs"
                                     >
                                         التالي
                                     </button>
@@ -559,62 +901,105 @@ export default function AdminGamificationPage() {
                 </div>
             )}
 
-            {/* ─── Confirmation Modal ─── */}
-            {showConfirm && selected && (
-                <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" dir="rtl">
-                    <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden animate-fadeIn">
-                        {/* Modal Header */}
-                        <div className="bg-rose-50 border-b border-rose-100 px-6 py-5">
-                            <div className="text-4xl mb-1 text-center">⚠️</div>
-                            <h3 className="text-xl font-black text-rose-800 text-center">تأكيد خصم النقاط</h3>
+            {/* ─── CONFIRMATION MODAL ─── */}
+            {showConfirmModal && selected && (
+                <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+                    <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 animate-scaleUp">
+                        <div
+                            className={`w-14 h-14 rounded-2xl flex items-center justify-center text-3xl mx-auto shadow-inner ${
+                                operationType === 'reset'
+                                    ? 'bg-red-50 text-red-600'
+                                    : 'bg-rose-50 text-rose-600'
+                            }`}
+                        >
+                            {operationType === 'reset' ? '🔄' : '⚠️'}
                         </div>
 
-                        {/* Modal Body */}
-                        <div className="p-6 space-y-4 text-sm">
-                            <div className="bg-gray-50 rounded-xl p-4 space-y-2">
-                                <div className="flex justify-between">
-                                    <span className="text-gray-500">الطالب</span>
-                                    <span className="font-black text-gray-900">{selected.name}</span>
-                                </div>
-                                <div className="flex justify-between">
-                                    <span className="text-gray-500">الرصيد الحالي</span>
-                                    <span className="font-bold text-gray-700">{(selected.points || 0).toLocaleString()} نقطة</span>
-                                </div>
-                                <div className="flex justify-between">
-                                    <span className="text-gray-500">يُخصم</span>
-                                    <span className="font-black text-rose-600">−{parsedAmount.toLocaleString()} نقطة</span>
-                                </div>
-                                <div className="flex justify-between border-t border-gray-200 pt-2">
-                                    <span className="text-gray-500">الرصيد بعد الخصم</span>
-                                    <span className="font-black text-green-700">{((selected.points || 0) - parsedAmount).toLocaleString()} نقطة</span>
-                                </div>
+                        <div className="text-center">
+                            <h3 className="text-xl font-black text-gray-900">
+                                {operationType === 'reset'
+                                    ? 'تأكيد تصفير نقاط الطالب'
+                                    : 'تأكيد خصم النقاط'}
+                            </h3>
+                            <p className="text-xs text-gray-500 mt-1">
+                                يرجى مراجعة تفاصيل العملية بدقة قبل الإرسال
+                            </p>
+                        </div>
+
+                        <div className="bg-gray-50 rounded-2xl p-4 space-y-2.5 text-xs">
+                            <div className="flex justify-between">
+                                <span className="text-gray-500 font-bold">اسم الطالب:</span>
+                                <span className="font-black text-gray-900">{selected.name}</span>
                             </div>
-                            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
-                                <div className="text-xs text-amber-700 font-bold mb-1">السبب المسجَّل:</div>
-                                <div className="text-amber-900 text-sm">{deductReason}</div>
+                            <div className="flex justify-between">
+                                <span className="text-gray-500 font-bold">معرف الطالب:</span>
+                                <span className="font-mono text-gray-700">{selected._id}</span>
+                            </div>
+                            <div className="flex justify-between border-t border-gray-200/60 pt-2">
+                                <span className="text-gray-500 font-bold">الرصيد الحالي:</span>
+                                <span className="font-bold text-gray-800">
+                                    {(selected.points || 0).toLocaleString()} نقطة
+                                </span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span className="text-gray-500 font-bold">المبلغ المخصوم:</span>
+                                <span className="font-black text-rose-600">
+                                    −
+                                    {(operationType === 'reset'
+                                        ? selected.points
+                                        : parsedDeductAmount
+                                    ).toLocaleString()}{' '}
+                                    نقطة
+                                </span>
+                            </div>
+                            <div className="flex justify-between border-t border-gray-200/60 pt-2">
+                                <span className="text-gray-500 font-bold">الرصيد بعد العملية:</span>
+                                <span className="font-black text-emerald-700">
+                                    {(operationType === 'reset'
+                                        ? 0
+                                        : (selected.points || 0) - parsedDeductAmount
+                                    ).toLocaleString()}{' '}
+                                    نقطة
+                                </span>
                             </div>
                         </div>
 
-                        {/* Modal Buttons */}
-                        <div className="px-6 pb-6 flex gap-3">
+                        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs">
+                            <span className="font-bold text-amber-800 block mb-0.5">السبب المسجل:</span>
+                            <span className="text-amber-900 font-medium">
+                                {operationType === 'reset' ? resetReason : deductReason}
+                            </span>
+                        </div>
+
+                        <div className="flex items-center gap-3 pt-2">
                             <button
-                                onClick={() => setShowConfirm(false)}
-                                disabled={deducting}
-                                className="flex-1 py-3 border-2 border-gray-200 text-gray-700 font-bold rounded-xl hover:bg-gray-50 transition-colors disabled:opacity-50"
+                                type="button"
+                                onClick={() => setShowConfirmModal(false)}
+                                disabled={submitting}
+                                className="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-bold transition-colors"
                             >
                                 إلغاء
                             </button>
                             <button
-                                onClick={handleDeduct}
-                                disabled={deducting}
-                                className="flex-1 py-3 bg-rose-600 hover:bg-rose-700 text-white font-black rounded-xl transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                                type="button"
+                                onClick={handleExecuteOperation}
+                                disabled={submitting}
+                                className={`flex-1 py-2.5 text-white rounded-xl text-xs font-bold transition-colors shadow-sm flex items-center justify-center gap-2 disabled:opacity-60 ${
+                                    operationType === 'reset'
+                                        ? 'bg-red-700 hover:bg-red-800'
+                                        : 'bg-rose-600 hover:bg-rose-700'
+                                }`}
                             >
-                                {deducting ? (
+                                {submitting ? (
                                     <>
-                                        <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                        جاري التنفيذ...
+                                        <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                        <span>جاري التنفيذ...</span>
                                     </>
-                                ) : '✅ تأكيد الخصم'}
+                                ) : (
+                                    <span>
+                                        {operationType === 'reset' ? 'تأكيد التصفير 🔄' : 'تأكيد الخصم 📉'}
+                                    </span>
+                                )}
                             </button>
                         </div>
                     </div>

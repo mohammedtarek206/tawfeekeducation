@@ -76,10 +76,14 @@ export default function Header() {
                 </div>
 
                 {/* Points */}
-                <div className="flex items-center gap-2 px-3 py-1.5 bg-gold/10 text-gold-dark rounded-lg font-bold border border-gold/30" title="إجمالي النقاط">
+                <Link
+                    href="/student/points"
+                    className="flex items-center gap-2 px-3 py-1.5 bg-gold/10 hover:bg-gold/20 text-gold-dark rounded-lg font-bold border border-gold/30 transition-colors cursor-pointer"
+                    title="إجمالي النقاط - اضغط لعرض السجل والترتيب"
+                >
                     <span>🧭</span>
                     <span suppressHydrationWarning>{mounted ? (user?.points || 0) : 0}</span>
-                </div>
+                </Link>
 
                 {/* User Menu Dropdown */}
                 <div className="relative" ref={dropdownRef}>

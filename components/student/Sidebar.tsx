@@ -20,6 +20,7 @@ const LINKS = [
     { href: '/student/study-notes', label: 'مذكرات س/ج', icon: '📚' },
     { href: '/student/ask-master', label: 'اسأل المستر', icon: '🤖' },
     { href: '/student/rewards', label: 'الجوائز', icon: '🎁' },
+    { href: '/student/points', label: 'نقاطي وسجلي', icon: '🪙' },
     { href: '/student/leaderboard', label: 'لوحة الشرف', icon: '🥇' },
 ];
 

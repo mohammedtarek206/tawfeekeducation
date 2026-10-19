@@ -1,92 +1,67 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/db/connect';
-import User from '@/lib/db/models/User';
+import HonorBoard from '@/lib/db/models/HonorBoard';
 import { withStudent } from '@/lib/auth/middleware';
 import { JWTPayload } from '@/lib/auth/jwt';
 
-async function handler(req: NextRequest, _ctx: unknown, student: JWTPayload): Promise<NextResponse> {
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
+async function handler(
+    _req: NextRequest,
+    _ctx: unknown,
+    currentStudent: JWTPayload
+): Promise<NextResponse> {
     await connectDB();
 
-    const { searchParams } = new URL(req.url);
-    const limitParam = parseInt(searchParams.get('limit') || '50', 10);
-    const limit = Math.min(100, Math.max(5, isNaN(limitParam) ? 50 : limitParam));
+    // Fetch students approved by admin in HonorBoard, strictly following the manual rank
+    const entries = await HonorBoard.find()
+        .sort({ rank: 1, createdAt: 1 })
+        .populate({
+            path: 'student',
+            select: 'name avatar grade points level status',
+        })
+        .lean();
 
-    // Fetch approved students sorted by points desc
-    const students = await User.find({ role: 'student', status: 'approved' })
-        .select('_id name points level grade avatar')
-        .sort({ points: -1, level: -1 })
-        .limit(limit)
-        .lean() as Array<{
-            _id: { toString(): string };
-            name: string;
-            points: number;
-            level: number;
-            grade?: string;
-            avatar?: string;
-        }>;
-
-    // Build rank with tie detection
-    type Entry = {
-        rank: number;
-        studentId: string;
-        name: string;
-        points: number;
-        level: number;
-        grade: string;
-        avatar: string | null;
-        isMe: boolean;
-    };
-
-    const leaderboard: Entry[] = [];
-    for (let i = 0; i < students.length; i++) {
-        const s = students[i];
-        let rank = i + 1;
-        if (i > 0) {
-            const prev = students[i - 1];
-            if (prev.points === s.points && prev.level === s.level) {
-                rank = leaderboard[i - 1].rank;
-            }
-        }
-        leaderboard.push({
-            rank,
-            studentId: s._id.toString(),
-            name: s.name,
-            points: s.points || 0,
-            level: s.level || 1,
-            grade: s.grade || '',
-            avatar: s.avatar || null,
-            isMe: s._id.toString() === student.userId,
+    // Filter valid approved students, strip any sensitive data
+    const leaderboard = entries
+        .filter((e: any) => e.student && e.student.status !== 'suspended')
+        .map((e: any) => {
+            const studentId = e.student._id.toString();
+            return {
+                rank: e.rank,
+                studentId,
+                name: e.student.name || 'طالب متميز',
+                avatar: e.student.avatar || null,
+                grade: e.student.grade || '',
+                level: e.student.level || 1,
+                points: typeof e.student.points === 'number' ? e.student.points : 0,
+                note: e.note || '',
+                isMe: studentId === currentStudent.userId,
+            };
         });
-    }
 
-    // Get the current student's rank if not in the top list
-    const myEntry = leaderboard.find(e => e.isMe);
-    let myRank: number | null = myEntry?.rank ?? null;
+    const myEntry = leaderboard.find((item) => item.isMe);
+    const myRank = myEntry ? myEntry.rank : null;
 
-    if (!myRank) {
-        const me = await User.findById(student.userId).select('points').lean() as { points?: number } | null;
-        if (me) {
-            const above = await User.countDocuments({
-                role: 'student',
-                status: 'approved',
-                points: { $gt: me.points || 0 },
-            });
-            myRank = above + 1;
-        }
-    }
-
-    const topStudent = leaderboard[0] ?? null;
-
-    return NextResponse.json({
+    const response = NextResponse.json({
         success: true,
         data: {
             leaderboard,
+            totalHonored: leaderboard.length,
             myRank,
-            totalStudents: await User.countDocuments({ role: 'student', status: 'approved' }),
-            topStudentName: topStudent?.name ?? null,
-            highestPoints: topStudent?.points ?? 0,
+            isInHonorBoard: Boolean(myEntry),
+            topStudentName: leaderboard[0]?.name ?? null,
+            lastUpdated: new Date().toISOString(),
         },
     });
+
+    // Ensure no caching so updates by admin reflect immediately
+    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    response.headers.set('Pragma', 'no-cache');
+    response.headers.set('Expires', '0');
+
+    return response;
 }
 
 export const GET = withStudent(handler);

@@ -62,7 +62,15 @@ async function getHandler(req: NextRequest, _ctx: unknown, _admin: JWTPayload): 
     const limit = parseInt(searchParams.get('limit') || '20');
 
     const filter: Record<string, unknown> = {};
-    if (studentId) filter.student = studentId;
+    let studentDetails = null;
+    if (studentId) {
+        filter.student = studentId;
+        if (mongoose.Types.ObjectId.isValid(studentId)) {
+            studentDetails = await User.findById(studentId)
+                .select('name phone points level grade')
+                .lean();
+        }
+    }
 
     const total = await PointTransaction.countDocuments(filter);
     const transactions = await PointTransaction.find(filter)
@@ -99,6 +107,7 @@ async function getHandler(req: NextRequest, _ctx: unknown, _admin: JWTPayload): 
             totalPointsAwarded,
             page,
             pages: Math.ceil(total / limit),
+            student: studentDetails,
         },
     });
 }
