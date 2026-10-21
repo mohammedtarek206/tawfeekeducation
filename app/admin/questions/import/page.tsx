@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { ACTIVE_GRADES } from '@/lib/constants/grades';
@@ -36,7 +36,7 @@ const DIFFICULTY_OPTS = [
     { value: 'hard', label: 'صعب' },
 ];
 
-export default function QuestionImportPage() {
+function QuestionImportContent() {
     const searchParams = useSearchParams();
     const queryExamId = searchParams.get('examId') || '';
 
@@ -996,5 +996,19 @@ export default function QuestionImportPage() {
                 </div>
             )}
         </div>
+    );
+}
+
+export default function QuestionImportPage() {
+    return (
+        <Suspense
+            fallback={
+                <div className="max-w-6xl mx-auto p-8 text-center text-gray-500 animate-pulse">
+                    جاري تحميل صفحة استيراد الأسئلة...
+                </div>
+            }
+        >
+            <QuestionImportContent />
+        </Suspense>
     );
 }
