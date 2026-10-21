@@ -1,12 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/db/connect';
 import Question from '@/lib/db/models/Question';
+import Exam from '@/lib/db/models/Exam';
 import { withAdmin } from '@/lib/auth/middleware';
 import { JWTPayload } from '@/lib/auth/jwt';
-import { parseQuestionsFromText } from '@/lib/utils/questionParser';
+import {
+    parseQuestionsFromText,
+    extractTextFromDocx,
+    extractTextFromPdf,
+    ParsedItem,
+} from '@/lib/utils/questionParser';
+import { createAuditLog } from '@/lib/security/auditLog';
+import mongoose from 'mongoose';
 
 function detectDuplicates(
-    parsed: Array<{ text: string; answer: string }>,
+    parsed: Array<{ text: string }>,
     existing: Array<{ text: string }>
 ): Set<number> {
     const dupes = new Set<number>();
@@ -26,35 +34,80 @@ function detectDuplicates(
     return dupes;
 }
 
-// POST /api/admin/questions/parse — parse text and return preview
+// POST /api/admin/questions/parse — parse text or uploaded file (TXT, DOCX, PDF) and return preview
 async function parseHandler(req: NextRequest, _ctx: unknown, _admin: JWTPayload): Promise<NextResponse> {
     try {
         await connectDB();
-        const body = await req.json();
-        const { text } = body;
+
+        const contentType = req.headers.get('content-type') || '';
+        let text = '';
+
+        if (contentType.includes('multipart/form-data')) {
+            const formData = await req.formData();
+            const file = formData.get('file') as File | null;
+            const textParam = formData.get('text') as string | null;
+
+            if (file && typeof file === 'object' && 'arrayBuffer' in file) {
+                const fileName = (file.name || '').toLowerCase();
+                const arrayBuffer = await file.arrayBuffer();
+                const buffer = Buffer.from(arrayBuffer);
+
+                if (buffer.length > 10 * 1024 * 1024) {
+                    return NextResponse.json(
+                        { success: false, message: 'حجم الملف يتجاوز الحد الأقصى المسموح به (10 ميجابايت)' },
+                        { status: 400 }
+                    );
+                }
+
+                if (fileName.endsWith('.docx')) {
+                    text = await extractTextFromDocx(buffer);
+                } else if (fileName.endsWith('.pdf')) {
+                    text = await extractTextFromPdf(buffer);
+                } else if (fileName.endsWith('.txt')) {
+                    text = buffer.toString('utf-8');
+                } else {
+                    return NextResponse.json(
+                        { success: false, message: 'نوع الملف غير مدعوم. الصيغ المدعومة هي TXT و DOCX و PDF فقط.' },
+                        { status: 400 }
+                    );
+                }
+            } else if (textParam) {
+                text = textParam;
+            }
+        } else {
+            const body = await req.json().catch(() => ({}));
+            text = body.text || '';
+        }
 
         if (!text || typeof text !== 'string' || text.trim().length < 5) {
-            return NextResponse.json({ success: false, message: 'النص فارغ أو قصير جداً' }, { status: 400 });
+            return NextResponse.json(
+                { success: false, message: 'النص فارغ أو قصير جداً للتحليل' },
+                { status: 400 }
+            );
         }
 
         const parsed = parseQuestionsFromText(text);
 
         if (!parsed.length) {
             return NextResponse.json(
-                { success: false, message: 'لم يتم التعرف على أي أسئلة. تأكد من الصيغة: "س: السؤال" و"ج: الإجابة"' },
+                {
+                    success: false,
+                    message: 'لم يتم التعرف على أي أسئلة صالحة. يرجى التأكد من اتباع الصيغة المحددة (س: السؤال ثم الخيارات والإجابة).',
+                },
                 { status: 400 }
             );
         }
 
-        // Check for duplicates against existing DB
+        // Check for duplicates in DB safely
         let existingQuestions: Array<{ text: string }> = [];
         try {
-            const textQueries = parsed.map((p) => p.text.substring(0, 30));
+            const questionTexts = parsed.map((p) => p.text.trim()).filter(Boolean);
             existingQuestions = await Question.find({
-                text: { $regex: textQueries.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), $options: 'i' },
-            }).select('text').lean() as Array<{ text: string }>;
+                text: { $in: questionTexts },
+            })
+                .select('text')
+                .lean() as Array<{ text: string }>;
         } catch {
-            // If duplicate detection fails, continue without it
             existingQuestions = [];
         }
 
@@ -78,88 +131,141 @@ async function parseHandler(req: NextRequest, _ctx: unknown, _admin: JWTPayload)
                 },
             },
         });
-    } catch (err) {
+    } catch (err: any) {
         console.error('Parse error:', err);
         return NextResponse.json(
-            { success: false, message: 'حدث خطأ أثناء تحليل النص' },
+            { success: false, message: err.message || 'حدث خطأ أثناء تحليل النص أو الملف' },
             { status: 500 }
         );
     }
 }
 
-// POST /api/admin/questions/import — save parsed questions to DB
+// POST /api/admin/questions/parse?action=import — save parsed questions to DB (and optionally link to an Exam)
 async function importHandler(req: NextRequest, _ctx: unknown, admin: JWTPayload): Promise<NextResponse> {
     try {
         await connectDB();
         const body = await req.json();
-        const { questions, grade, subject, difficulty } = body;
+        const { questions, grade, subject, difficulty, examId } = body;
 
         if (!questions || !Array.isArray(questions) || !questions.length) {
             return NextResponse.json({ success: false, message: 'لا توجد أسئلة للاستيراد' }, { status: 400 });
         }
-        if (!grade) return NextResponse.json({ success: false, message: 'يرجى تحديد الصف' }, { status: 400 });
-        if (!subject) return NextResponse.json({ success: false, message: 'يرجى تحديد المادة' }, { status: 400 });
+
+        let targetExam: any = null;
+        if (examId) {
+            if (!mongoose.Types.ObjectId.isValid(examId)) {
+                return NextResponse.json({ success: false, message: 'معرف الامتحان غير صالح' }, { status: 400 });
+            }
+            targetExam = await Exam.findById(examId);
+            if (!targetExam) {
+                return NextResponse.json({ success: false, message: 'الامتحان المحدد غير موجود' }, { status: 404 });
+            }
+        }
+
+        const effectiveGrade = grade || targetExam?.grade;
+        const effectiveSubject = subject || targetExam?.subject;
+
+        if (!effectiveGrade) return NextResponse.json({ success: false, message: 'يرجى تحديد الصف الدراسي' }, { status: 400 });
+        if (!effectiveSubject) return NextResponse.json({ success: false, message: 'يرجى تحديد المادة الدراسية' }, { status: 400 });
 
         const toInsert = questions
             .filter((q: any) => !q.skip && q.text && q.text.trim())
             .map((q: any) => {
-                let parsedChoices = [];
-                // Force type to be only 'mcq' or 'true_false' (the only types the Question model accepts)
-                let qType: 'mcq' | 'true_false' = 'true_false';
+                let parsedChoices: Array<{ text: string; isCorrect: boolean }> = [];
+                const qType = (q.type === 'essay' ? 'essay' : q.type === 'true_false' ? 'true_false' : 'mcq') as 'mcq' | 'true_false' | 'essay';
 
-                if (q.type === 'mcq' && Array.isArray(q.options) && q.options.length >= 2) {
-                    qType = 'mcq';
-                    const correctAnswer = (q.correctAnswer || q.answer || '').trim();
-                    parsedChoices = q.options.map((opt: string) => ({
+                if (qType === 'mcq') {
+                    const opts = Array.isArray(q.options) ? q.options : [];
+                    const cAns = (q.correctAnswer || q.answer || '').trim();
+                    parsedChoices = opts.map((opt: string, i: number) => ({
                         text: typeof opt === 'string' ? opt.trim() : String(opt),
-                        isCorrect: typeof opt === 'string' && opt.trim() === correctAnswer
+                        isCorrect: i === q.correctIndex || opt.trim() === cAns,
                     }));
-                    // If no correct answer matched, mark the first as correct
-                    if (!parsedChoices.some((c: any) => c.isCorrect) && parsedChoices.length > 0) {
+
+                    // If still no correct answer found and options exist, fallback to first choice
+                    if (!parsedChoices.some((c) => c.isCorrect) && parsedChoices.length > 0) {
                         parsedChoices[0].isCorrect = true;
                     }
-                } else {
-                    // Default: true_false for everything else
-                    qType = 'true_false';
-                    const answer = (q.correctAnswer || q.answer || '').trim();
-                    const isCorrect = answer === 'صح' || answer.toLowerCase() === 'true' || answer === 'صحيح';
+                } else if (qType === 'true_false') {
+                    const ans = (q.correctAnswer || q.answer || '').trim();
+                    const isTrue = ans === 'صح' || ans.toLowerCase() === 'true' || ans === 'صحيح' || q.correctIndex === 0;
                     parsedChoices = [
-                        { text: 'صح', isCorrect: isCorrect },
-                        { text: 'خطأ', isCorrect: !isCorrect }
+                        { text: 'صح', isCorrect: isTrue },
+                        { text: 'خطأ', isCorrect: !isTrue },
                     ];
+                } else {
+                    // Essay
+                    parsedChoices = [];
                 }
+
+                const pts = Number(q.points) > 0 ? Number(q.points) : 1;
 
                 return {
                     text: q.text.trim(),
                     type: qType,
                     choices: parsedChoices,
-                    difficulty: difficulty || 'medium',
-                    subject,
-                    grade,
+                    correctAnswer: qType !== 'essay' ? (q.correctAnswer || q.answer || undefined) : undefined,
+                    explanation: q.explanation ? String(q.explanation).trim() : undefined,
+                    modelAnswer: qType === 'essay' ? String(q.modelAnswer || q.correctAnswer || q.answer || '').trim() || undefined : undefined,
+                    gradingCriteria: qType === 'essay' ? String(q.gradingCriteria || '').trim() || undefined : undefined,
+                    difficulty: difficulty || q.difficulty || 'medium',
+                    subject: effectiveSubject,
+                    grade: effectiveGrade,
+                    examId: targetExam ? targetExam._id : undefined,
                     isActive: true,
                     usageCount: 0,
                     order: 0,
-                    points: q.points || 1,
+                    points: pts,
                     tags: [],
                     createdBy: admin.userId,
                 };
             });
 
         if (!toInsert.length) {
-            return NextResponse.json({ success: false, message: 'لا توجد أسئلة صالحة بعد الفلترة' }, { status: 400 });
+            return NextResponse.json({ success: false, message: 'لا توجد أسئلة صالحة للاستيراد بعد الفلترة' }, { status: 400 });
         }
 
         const inserted = await Question.insertMany(toInsert);
 
+        // If imported into an exam, link questions and update exam total points
+        if (targetExam) {
+            const newIds = inserted.map((q) => q._id);
+            targetExam.questions = targetExam.questions || [];
+            targetExam.questions.push(...newIds);
+
+            const addedPoints = inserted.reduce((sum, q) => sum + (q.points || 1), 0);
+            targetExam.totalPoints = (targetExam.totalPoints || 0) + addedPoints;
+            await targetExam.save();
+
+            await createAuditLog({
+                actor: admin.userId,
+                actorRole: 'admin',
+                action: 'QUESTION_IMPORT',
+                target: targetExam._id.toString(),
+                targetModel: 'Exam',
+                metadata: {
+                    examId: targetExam._id,
+                    importedCount: inserted.length,
+                    addedPoints,
+                },
+            });
+        }
+
         return NextResponse.json({
             success: true,
-            message: `تم استيراد ${inserted.length} سؤال بنجاح`,
-            data: { count: inserted.length },
+            message: targetExam
+                ? `تم استيراد ${inserted.length} سؤال وربطها بالامتحان «${targetExam.title}» بنجاح`
+                : `تم استيراد ${inserted.length} سؤال إلى بنك الأسئلة بنجاح`,
+            data: {
+                count: inserted.length,
+                examId: targetExam ? targetExam._id : null,
+                examTitle: targetExam ? targetExam.title : null,
+            },
         });
-    } catch (err) {
+    } catch (err: any) {
         console.error('Import error:', err);
         return NextResponse.json(
-            { success: false, message: 'حدث خطأ أثناء حفظ الأسئلة في قاعدة البيانات' },
+            { success: false, message: err.message || 'حدث خطأ أثناء حفظ الأسئلة في قاعدة البيانات' },
             { status: 500 }
         );
     }

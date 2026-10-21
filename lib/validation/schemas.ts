@@ -63,24 +63,56 @@ export const lessonSchema = z.object({
 });
 
 export const questionSchema = z.object({
-    text: z.string().min(5, 'نص السؤال مطلوب').max(1000),
-    type: z.enum(['mcq', 'true_false']),
+    text: z.string().min(3, 'نص السؤال مطلوب').max(2000),
+    type: z.enum(['mcq', 'true_false', 'essay']),
     choices: z
         .array(
             z.object({
-                text: z.string().min(1),
+                text: z.string().min(1, 'نص الاختيار مطلوب'),
                 isCorrect: z.boolean(),
             })
         )
-        .min(2, 'يجب إضافة خيارين على الأقل')
-        .max(6),
-    explanation: z.string().max(1000).optional(),
+        .optional()
+        .default([]),
+    explanation: z.string().max(2000).optional().or(z.literal('')),
+    modelAnswer: z.string().max(2000).optional().or(z.literal('')),
+    gradingCriteria: z.string().max(2000).optional().or(z.literal('')),
     difficulty: z.enum(['easy', 'medium', 'hard']).default('medium'),
     subject: z.enum(SUBJECT_VALUES as [string, ...string[]], { errorMap: () => ({ message: 'يرجى اختيار المادة' }) }),
-    grade: z.string().optional(),
-    unit: z.string().max(100).optional(),
-    points: z.number().min(1).default(1),
-    tags: z.array(z.string()).optional(),
+    grade: z.string().optional().or(z.literal('')),
+    unit: z.string().max(100).optional().or(z.literal('')),
+    points: z.number().min(0.5).default(1),
+    tags: z.array(z.string()).optional().default([]),
+}).superRefine((data, ctx) => {
+    if (data.type === 'mcq') {
+        if (!data.choices || data.choices.length < 2) {
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                message: 'يجب إضافة خيارين على الأقل لأسئلة الاختيار من متعدد',
+                path: ['choices'],
+            });
+        } else if (!data.choices.some((c) => c.isCorrect)) {
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                message: 'يجب تحديد إجابة صحيحة واحدة على الأقل',
+                path: ['choices'],
+            });
+        }
+    } else if (data.type === 'true_false') {
+        if (!data.choices || data.choices.length !== 2) {
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                message: 'سؤال صح وخطأ يجب أن يحتوي على خيارين (صح وخطأ)',
+                path: ['choices'],
+            });
+        } else if (!data.choices.some((c) => c.isCorrect)) {
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                message: 'يجب تحديد الإجابة الصحيحة (صح أو خطأ)',
+                path: ['choices'],
+            });
+        }
+    }
 });
 
 export const examSchema = z.object({

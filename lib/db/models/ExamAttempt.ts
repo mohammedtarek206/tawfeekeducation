@@ -1,6 +1,6 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
-export type AttemptType = 'quiz' | 'weekly_exam' | 'monthly_exam';
+export type AttemptType = 'quiz' | 'weekly_exam' | 'monthly_exam' | 'practice';
 export type AttemptStatus = 'in_progress' | 'submitted' | 'expired';
 export type EssayGradingStatus = 'pending' | 'graded';
 
@@ -19,7 +19,7 @@ export interface IAnswerRecord {
 
 export interface IExamAttempt extends Document {
     student: mongoose.Types.ObjectId;
-    examRef: mongoose.Types.ObjectId;
+    examRef?: mongoose.Types.ObjectId;
     examType: AttemptType;
     status: AttemptStatus;
     answers: IAnswerRecord[];
@@ -34,7 +34,7 @@ export interface IExamAttempt extends Document {
     submittedAt?: Date;
     timeSpent: number;
     attemptNumber: number;
-    serverEndTime: Date;
+    serverEndTime?: Date;
     createdAt: Date;
 }
 
@@ -53,8 +53,13 @@ const AnswerRecordSchema = new Schema<IAnswerRecord>({
 const ExamAttemptSchema = new Schema<IExamAttempt>(
     {
         student: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
-        examRef: { type: Schema.Types.ObjectId, required: true, index: true },
-        examType: { type: String, enum: ['quiz', 'weekly_exam', 'monthly_exam'], required: true },
+        examRef: { type: Schema.Types.ObjectId, ref: 'Exam', required: false, index: true },
+        examType: {
+            type: String,
+            enum: ['quiz', 'weekly_exam', 'monthly_exam', 'practice'],
+            required: true,
+            index: true
+        },
         status: {
             type: String,
             enum: ['in_progress', 'submitted', 'expired'],
@@ -73,13 +78,15 @@ const ExamAttemptSchema = new Schema<IExamAttempt>(
         submittedAt: { type: Date },
         timeSpent: { type: Number, default: 0 },
         attemptNumber: { type: Number, default: 1 },
-        serverEndTime: { type: Date, required: true },
+        serverEndTime: { type: Date },
     },
     { timestamps: true }
 );
 
 ExamAttemptSchema.index({ student: 1, examRef: 1, examType: 1 });
 
-const ExamAttempt =
-    mongoose.models.ExamAttempt || mongoose.model<IExamAttempt>('ExamAttempt', ExamAttemptSchema);
+if (mongoose.models.ExamAttempt) {
+    delete mongoose.models.ExamAttempt;
+}
+const ExamAttempt = mongoose.model<IExamAttempt>('ExamAttempt', ExamAttemptSchema);
 export default ExamAttempt;

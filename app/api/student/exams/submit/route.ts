@@ -171,19 +171,65 @@ async function postHandler(req: NextRequest, _ctx: unknown, student: JWTPayload)
         }
     }
 
+    const showResultImmediately = exam.showResultImmediately ?? true;
+    const correctCount = answerRecords.filter((a) => a.isCorrect).length;
+    const answeredCount = answerRecords.filter((a) =>
+        a.gradingStatus === 'pending'
+            ? (a.essayAnswer && a.essayAnswer.trim().length > 0)
+            : (a.selectedChoiceIndex >= 0)
+    ).length;
+    const wrongCount = answerRecords.filter((a) =>
+        a.gradingStatus === 'graded' && !a.isCorrect && a.selectedChoiceIndex >= 0
+    ).length;
+    const unansweredCount = fullQuestions.length - answeredCount;
+
+    // Build question-level review only when showResultImmediately is enabled
+    const detailedReview = showResultImmediately
+        ? fullQuestions.map((question) => {
+            const qIdStr = question._id.toString();
+            const record = answerRecords.find((a) => a.questionId.toString() === qIdStr);
+            const qType = (question as any).type;
+
+            return {
+                questionId: question._id,
+                text: question.text,
+                type: qType,
+                points: question.points,
+                image: question.image,
+                pointsEarned: record?.pointsEarned || 0,
+                isCorrect: record?.isCorrect || false,
+                gradingStatus: record?.gradingStatus || 'graded',
+                selectedChoiceIndex: record?.selectedChoiceIndex ?? -1,
+                essayAnswer: record?.essayAnswer || '',
+                choices: qType === 'essay'
+                    ? []
+                    : (((question as any).choices || []) as Array<{ text: string; isCorrect: boolean }>).map((c) => ({
+                        text: c.text,
+                        isCorrect: !!c.isCorrect,
+                    })),
+                explanation: (question as any).explanation || '',
+                modelAnswer: qType === 'essay' ? ((question as any).modelAnswer || '') : undefined,
+            };
+        })
+        : null;
+
     return NextResponse.json({
         success: true,
         data: {
             attemptId: attempt._id,
-            score,
+            showResultImmediately,
+            score: showResultImmediately ? score : null,
             totalPoints,
-            percentage,
-            passed,
-            earnedPoints,
+            percentage: showResultImmediately ? percentage : null,
+            passed: showResultImmediately ? passed : null,
+            earnedPoints: showResultImmediately ? earnedPoints : 0,
             hasUngradedEssays,
-            correctAnswers: answerRecords.filter((a) => a.isCorrect).length,
+            correctAnswers: showResultImmediately ? correctCount : null,
+            wrongAnswers: showResultImmediately ? wrongCount : null,
+            unansweredCount: showResultImmediately ? unansweredCount : null,
             totalQuestions: fullQuestions.length,
             essayCount: answerRecords.filter((a) => a.gradingStatus === 'pending').length,
+            review: detailedReview,
         },
     });
 }

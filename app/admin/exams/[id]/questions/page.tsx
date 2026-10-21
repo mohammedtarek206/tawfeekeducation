@@ -244,7 +244,13 @@ export default function AdminExamQuestionsPage() {
                         <span>{exam.isPublished ? '🟢 منشور' : '⚫ مسودة'}</span>
                     </div>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap">
+                    <Link
+                        href={`/admin/questions/import?examId=${examId}`}
+                        className="btn-secondary text-sm px-4 py-2 flex items-center gap-1.5"
+                    >
+                        📥 استيراد أسئلة
+                    </Link>
                     <button onClick={openFormForAdd} className="btn-primary" disabled={showForm}>
                         + إضافة سؤال
                     </button>

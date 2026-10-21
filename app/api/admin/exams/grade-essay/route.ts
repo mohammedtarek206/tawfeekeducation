@@ -130,7 +130,7 @@ async function postHandler(req: NextRequest, _ctx: unknown, admin: JWTPayload): 
                     amount: earnedPoints,
                     type: 'exam_completed',
                     reason: `${examType === 'monthly_exam' ? 'امتحان شهري' : examType === 'weekly_exam' ? 'امتحان أسبوعي' : 'كويز'} - ${percentage}% (بعد التصحيح)`,
-                    referenceId: updatedAttempt.examRef.toString(),
+                    referenceId: updatedAttempt.examRef?.toString(),
                     referenceType: 'Exam',
                 });
                 await ExamAttempt.findByIdAndUpdate(attemptId, { pointsAwarded: true, earnedPoints });

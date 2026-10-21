@@ -40,7 +40,11 @@ async function getHandler(req: NextRequest, _ctx: unknown, student: JWTPayload):
     }).select('examRef score percentage passed hasUngradedEssays').lean();
 
     const attemptMap: Record<string, typeof attempts[0]> = {};
-    attempts.forEach((a) => { attemptMap[a.examRef.toString()] = a; });
+    attempts.forEach((a) => {
+        if (a.examRef) {
+            attemptMap[a.examRef.toString()] = a;
+        }
+    });
 
     const examsWithAttempts = exams.map((exam) => ({
         ...exam,

@@ -21,6 +21,7 @@ const LINKS = [
     { href: '/admin/questions', label: 'بنك الأسئلة', icon: '💾' },
     { href: '/admin/questions/import', label: 'استيراد أسئلة', icon: '📥' },
     { href: '/admin/exams', label: 'الامتحانات', icon: '📝' },
+    { href: '/admin/exams/results', label: 'نتائج الامتحانات', icon: '📊' },
     { href: '/admin/rewards', label: 'الجوائز والاستبدال', icon: '🎁' },
     { href: '/admin/gamification', label: 'النقاط والسجلات', icon: '🪙' },
     { href: '/admin/lesson-quizzes', label: 'اختبارات الحصص', icon: '📝' },

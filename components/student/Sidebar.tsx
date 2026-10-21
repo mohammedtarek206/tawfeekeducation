@@ -14,6 +14,7 @@ const LINKS = [
     { href: '/student/lesson-quizzes', label: 'اختبارات الحصص', icon: '📝' },
     { href: '/student/solution-videos', label: 'فيديوهات الحل', icon: '▶️' },
     { href: '/student/exams', label: 'الامتحانات', icon: '📊' },
+    { href: '/student/questions', label: 'بنك الأسئلة', icon: '💡' },
     { href: '/student/weekly-exams', label: 'الاختبار الأسبوعي', icon: '📅' },
     { href: '/student/monthly-exams', label: 'الاختبار الشهري', icon: '📆' },
     { href: '/student/mistakes', label: 'أخطائي', icon: '📋' },
