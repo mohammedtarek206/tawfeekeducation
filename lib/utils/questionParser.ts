@@ -1,6 +1,3 @@
-import mammoth from 'mammoth';
-import { PDFParse } from 'pdf-parse';
-
 export interface ParsedItem {
     text: string;
     answer: string;
@@ -17,10 +14,12 @@ export interface ParsedItem {
 }
 
 /**
- * Extracts raw text from a DOCX buffer using mammoth
+ * Extracts raw text from a DOCX buffer using mammoth (dynamically imported)
  */
 export async function extractTextFromDocx(buffer: Buffer): Promise<string> {
     try {
+        const mammothModule = await import('mammoth');
+        const mammoth = mammothModule.default || mammothModule;
         const result = await mammoth.extractRawText({ buffer });
         return result.value || '';
     } catch (err: any) {
@@ -29,18 +28,26 @@ export async function extractTextFromDocx(buffer: Buffer): Promise<string> {
 }
 
 /**
- * Extracts raw text from a text-based PDF buffer using pdf-parse
+ * Extracts raw text from a text-based PDF buffer using pdf-parse (dynamically imported)
  */
 export async function extractTextFromPdf(buffer: Buffer): Promise<string> {
     try {
-        const parser = new PDFParse({ data: buffer });
-        const data = await parser.getText();
-        await parser.destroy().catch(() => {});
-        const text = data.text || '';
-        if (!text.trim()) {
-            throw new Error('لم يتم العثور على نصوص قابلة للقراءة داخل ملف PDF (قد يكون ملفاً ممسوحاً ضوئياً يتطلب OCR)');
+        const pdfParseModule = await import('pdf-parse');
+        const PDFParseClass = (pdfParseModule as any).PDFParse || (pdfParseModule as any).default?.PDFParse || (pdfParseModule as any).default;
+        if (typeof PDFParseClass === 'function') {
+            const parser = new PDFParseClass({ data: buffer });
+            const data = await parser.getText();
+            await parser.destroy().catch(() => {});
+            const text = data.text || '';
+            if (!text.trim()) {
+                throw new Error('لم يتم العثور على نصوص قابلة للقراءة داخل ملف PDF (قد يكون ملفاً ممسوحاً ضوئياً يتطلب OCR)');
+            }
+            return text;
+        } else {
+            const parseFn = typeof pdfParseModule === 'function' ? (pdfParseModule as any) : (pdfParseModule as any).default;
+            const data = await parseFn(buffer);
+            return data.text || '';
         }
-        return text;
     } catch (err: any) {
         throw new Error(`فشل قراءة ملف PDF: ${err.message || err}`);
     }
@@ -73,25 +80,37 @@ export function parseQuestionsFromText(raw: string): ParsedItem[] {
 
     if (!normalized) return results;
 
-    // Split on blank lines first
-    const rawBlocks = normalized.split(/\n\s*\n+/);
-    const finalBlocks: string[] = [];
-
-    // Regex to split consecutive questions that might not be separated by blank lines
-    const splitQuestionPattern = /\n(?=(?:نوع\s*السؤال\s*[:：\-–=/]?|(?:سـ?|Q)\s*(?:\(\d+\)|\d+)?\s*[:：\-–=/]|(?:سؤال|Question)\s*(?:\(\d+\)|\d+|رقم\s*\d+)?\s*[:：\-–=/]?|\d+[\.\-\)]\s+))/i;
-
-    for (const b of rawBlocks) {
-        const trimmed = b.trim();
-        if (!trimmed) continue;
-        const subBlocks = trimmed.split(splitQuestionPattern);
-        for (const sb of subBlocks) {
-            const sbt = sb.trim();
-            if (sbt) finalBlocks.push(sbt);
-        }
-    }
-
     const qTypeRegex = /^(?:نوع\s*السؤال|النوع|نوع)\s*[:：\-–=/]?\s*(.*)$/i;
     const qPrefixRegex = /^(?:(?:سـ?|Q)\s*(?:\(\d+\)|\d+)?\s*[:：\-–=/]\s*|(?:سؤال|Question)\s*(?:\(\d+\)|\d+|رقم\s*\d+)?\s*[:：\-–=/]?\s*|\d+[\.\-\)]\s*)\s*/i;
+
+    const allLines = normalized.split('\n').map((l) => l.trim());
+    const isQuestionStart = (line: string): boolean => {
+        return qTypeRegex.test(line) || qPrefixRegex.test(line);
+    };
+
+    const hasExplicitQuestionMarkers = allLines.some((l) => isQuestionStart(l));
+    const finalBlocks: string[] = [];
+
+    if (hasExplicitQuestionMarkers) {
+        let currentBlock: string[] = [];
+        for (const line of allLines) {
+            if (!line) continue;
+            if (isQuestionStart(line) && currentBlock.length > 0) {
+                finalBlocks.push(currentBlock.join('\n'));
+                currentBlock = [];
+            }
+            currentBlock.push(line);
+        }
+        if (currentBlock.length > 0) {
+            finalBlocks.push(currentBlock.join('\n'));
+        }
+    } else {
+        const rawBlocks = normalized.split(/\n\s*\n+/);
+        for (const b of rawBlocks) {
+            const trimmed = b.trim();
+            if (trimmed) finalBlocks.push(trimmed);
+        }
+    }
     const choicePrefixRegex = /^(?:[\(\[]?([أإآابتثجحخدذرزسشصضطظعغفقكلمنهويa-zA-Z0-9١-٩])[\)\]\.\-]|[\-\*•])\s+/;
     const aPrefixRegex = /^(?:(?:الإجابة\s*الصحيحة|الاجابة\s*الصحيحة|الإجابة|الاجابة|إجابة|اجابة|الجواب|جواب(?:\s+هو|\s+هي)?|Answer|Correct\s*Answer)\s*[:：\-–=/]?\s*|(?:جـ?|A)\s*[:：\-–=/]\s*)\s*(.*)$/i;
     const pointsRegex = /^(?:الدرجة|درجة|النقاط|نقاط|درجات|علامة|علامات|Points?|Score|Grade)\s*[:：\-–=/]?\s*(\d+(?:\.\d+)?)/i;

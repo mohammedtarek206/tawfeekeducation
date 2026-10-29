@@ -18,11 +18,14 @@ function detectDuplicates(
     existing: Array<{ text: string }>
 ): Set<number> {
     const dupes = new Set<number>();
-    const existingNorm = existing.map((q) => q.text.trim().toLowerCase());
+    const existingNorm = (existing || [])
+        .map((q) => (q && typeof q.text === 'string' ? q.text.trim().toLowerCase() : ''))
+        .filter(Boolean);
     const seenInBatch = new Map<string, number>();
 
-    parsed.forEach((p, idx) => {
-        const norm = p.text.trim().toLowerCase();
+    (parsed || []).forEach((p, idx) => {
+        const norm = (p && typeof p.text === 'string' ? p.text.trim().toLowerCase() : '');
+        if (!norm) return;
         if (existingNorm.includes(norm)) {
             dupes.add(idx);
         } else if (seenInBatch.has(norm)) {
@@ -52,7 +55,7 @@ async function parseHandler(req: NextRequest, _ctx: unknown, _admin: JWTPayload)
 
                 if (buffer.length > 10 * 1024 * 1024) {
                     return NextResponse.json(
-                        { success: false, message: 'حجم الملف يتجاوز الحد الأقصى المسموح به (10 ميجابايت)' },
+                        { success: false, message: 'حجم الملف يتجاوز الحد الأقصى المسموح به (10 ميجابايت)', errorCode: 'FILE_TOO_LARGE' },
                         { status: 400 }
                     );
                 }
@@ -65,7 +68,7 @@ async function parseHandler(req: NextRequest, _ctx: unknown, _admin: JWTPayload)
                     text = buffer.toString('utf-8');
                 } else {
                     return NextResponse.json(
-                        { success: false, message: 'نوع الملف غير مدعوم. الصيغ المدعومة هي TXT و DOCX و PDF فقط.' },
+                        { success: false, message: 'نوع الملف غير مدعوم. الصيغ المدعومة هي TXT و DOCX و PDF فقط.', errorCode: 'UNSUPPORTED_FILE_TYPE' },
                         { status: 400 }
                     );
                 }
@@ -79,7 +82,7 @@ async function parseHandler(req: NextRequest, _ctx: unknown, _admin: JWTPayload)
 
         if (!text || typeof text !== 'string' || text.trim().length < 5) {
             return NextResponse.json(
-                { success: false, message: 'النص فارغ أو قصير جداً للتحليل' },
+                { success: false, message: 'النص فارغ أو قصير جداً للتحليل', errorCode: 'EMPTY_TEXT' },
                 { status: 400 }
             );
         }
@@ -91,6 +94,7 @@ async function parseHandler(req: NextRequest, _ctx: unknown, _admin: JWTPayload)
                 {
                     success: false,
                     message: 'لم يتم التعرف على أي أسئلة صالحة. يرجى التأكد من اتباع الصيغة المحددة (س: السؤال ثم ج: الإجابة أو الخيارات).',
+                    errorCode: 'NO_VALID_QUESTIONS_FOUND',
                 },
                 { status: 400 }
             );
@@ -100,14 +104,18 @@ async function parseHandler(req: NextRequest, _ctx: unknown, _admin: JWTPayload)
         let existingQuestions: Array<{ text: string }> = [];
         try {
             await connectDB();
-            const questionTexts = parsed.map((p) => p.text.trim()).filter(Boolean);
-            existingQuestions = (await Question.find({
-                text: { $in: questionTexts },
-            })
-                .select('text')
-                .lean()) as Array<{ text: string }>;
-        } catch (dbErr) {
-            console.warn('[Question Parse] Database duplicate check warning:', dbErr);
+            const questionTexts = parsed
+                .map((p) => (p && typeof p.text === 'string' ? p.text.trim() : ''))
+                .filter(Boolean);
+            if (questionTexts.length > 0) {
+                existingQuestions = (await Question.find({
+                    text: { $in: questionTexts },
+                })
+                    .select('text')
+                    .lean()) as Array<{ text: string }>;
+            }
+        } catch (dbErr: any) {
+            console.warn('[Question Parse] Database duplicate check warning:', dbErr?.message || dbErr);
             existingQuestions = [];
         }
 
@@ -132,9 +140,16 @@ async function parseHandler(req: NextRequest, _ctx: unknown, _admin: JWTPayload)
             },
         });
     } catch (err: any) {
-        console.error('Parse error:', err);
+        console.error('[Question Parse API Error]:', {
+            message: err?.message,
+            stack: err?.stack,
+        });
         return NextResponse.json(
-            { success: false, message: err.message || 'حدث خطأ أثناء تحليل النص أو الملف' },
+            {
+                success: false,
+                message: err?.message || 'حدث خطأ غير متوقع أثناء تحليل النص أو الملف',
+                errorCode: 'PARSE_INTERNAL_ERROR',
+            },
             { status: 500 }
         );
     }
@@ -148,25 +163,25 @@ async function importHandler(req: NextRequest, _ctx: unknown, admin: JWTPayload)
         const { questions, grade, subject, difficulty, examId } = body;
 
         if (!questions || !Array.isArray(questions) || !questions.length) {
-            return NextResponse.json({ success: false, message: 'لا توجد أسئلة للاستيراد' }, { status: 400 });
+            return NextResponse.json({ success: false, message: 'لا توجد أسئلة للاستيراد', errorCode: 'NO_QUESTIONS' }, { status: 400 });
         }
 
         let targetExam: any = null;
         if (examId) {
             if (!mongoose.Types.ObjectId.isValid(examId)) {
-                return NextResponse.json({ success: false, message: 'معرف الامتحان غير صالح' }, { status: 400 });
+                return NextResponse.json({ success: false, message: 'معرف الامتحان غير صالح', errorCode: 'INVALID_EXAM_ID' }, { status: 400 });
             }
             targetExam = await Exam.findById(examId);
             if (!targetExam) {
-                return NextResponse.json({ success: false, message: 'الامتحان المحدد غير موجود' }, { status: 404 });
+                return NextResponse.json({ success: false, message: 'الامتحان المحدد غير موجود', errorCode: 'EXAM_NOT_FOUND' }, { status: 404 });
             }
         }
 
         const effectiveGrade = grade || targetExam?.grade;
         const effectiveSubject = subject || targetExam?.subject || 'uncategorized';
 
-        if (!effectiveGrade) return NextResponse.json({ success: false, message: 'يرجى تحديد الصف الدراسي' }, { status: 400 });
-        if (!effectiveSubject) return NextResponse.json({ success: false, message: 'يرجى تحديد المادة الدراسية' }, { status: 400 });
+        if (!effectiveGrade) return NextResponse.json({ success: false, message: 'يرجى تحديد الصف الدراسي', errorCode: 'MISSING_GRADE' }, { status: 400 });
+        if (!effectiveSubject) return NextResponse.json({ success: false, message: 'يرجى تحديد المادة الدراسية', errorCode: 'MISSING_SUBJECT' }, { status: 400 });
 
         const toInsert = questions
             .filter((q: any) => !q.skip && q.text && q.text.trim())
@@ -222,7 +237,7 @@ async function importHandler(req: NextRequest, _ctx: unknown, admin: JWTPayload)
             });
 
         if (!toInsert.length) {
-            return NextResponse.json({ success: false, message: 'لا توجد أسئلة صالحة للاستيراد بعد الفلترة' }, { status: 400 });
+            return NextResponse.json({ success: false, message: 'لا توجد أسئلة صالحة للاستيراد بعد الفلترة', errorCode: 'NO_VALID_QUESTIONS' }, { status: 400 });
         }
 
         const inserted = await Question.insertMany(toInsert);
@@ -263,9 +278,12 @@ async function importHandler(req: NextRequest, _ctx: unknown, admin: JWTPayload)
             },
         });
     } catch (err: any) {
-        console.error('Import error:', err);
+        console.error('[Question Import Error]:', {
+            message: err?.message,
+            stack: err?.stack,
+        });
         return NextResponse.json(
-            { success: false, message: err.message || 'حدث خطأ أثناء حفظ الأسئلة في قاعدة البيانات' },
+            { success: false, message: err?.message || 'حدث خطأ أثناء حفظ الأسئلة في قاعدة البيانات', errorCode: 'IMPORT_INTERNAL_ERROR' },
             { status: 500 }
         );
     }
@@ -273,9 +291,24 @@ async function importHandler(req: NextRequest, _ctx: unknown, admin: JWTPayload)
 
 // Route dispatch
 export const POST = withAdmin(async (req: NextRequest, ctx: unknown, admin: JWTPayload) => {
-    const url = new URL(req.url);
-    if (url.searchParams.get('action') === 'import') {
-        return importHandler(req, ctx, admin);
+    try {
+        const url = new URL(req.url);
+        if (url.searchParams.get('action') === 'import') {
+            return await importHandler(req, ctx, admin);
+        }
+        return await parseHandler(req, ctx, admin);
+    } catch (routeErr: any) {
+        console.error('[Question Parse Route Exception]:', {
+            message: routeErr?.message,
+            stack: routeErr?.stack,
+        });
+        return NextResponse.json(
+            {
+                success: false,
+                message: routeErr?.message || 'حدث خطأ غير متوقع في معالجة طلب استيراد الأسئلة',
+                errorCode: 'ROUTE_DISPATCH_EXCEPTION',
+            },
+            { status: 500 }
+        );
     }
-    return parseHandler(req, ctx, admin);
 });

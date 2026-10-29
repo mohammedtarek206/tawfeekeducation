@@ -51,7 +51,15 @@ export function withAuth(handler: RouteHandler, requiredRoles?: string[]) {
             );
         }
 
-        return handler(req, context, payload);
+        try {
+            return await handler(req, context, payload);
+        } catch (error: any) {
+            console.error('[withAuth] Unhandled route error:', error);
+            return NextResponse.json(
+                { success: false, message: error?.message || 'حدث خطأ في معالجة الطلب في الخادم' },
+                { status: 500 }
+            );
+        }
     };
 }
 

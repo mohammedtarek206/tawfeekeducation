@@ -166,14 +166,16 @@ function QuestionImportContent() {
             }
 
             let json: any = null;
+            const resText = await res.text();
             try {
-                json = await res.json();
+                json = JSON.parse(resText);
             } catch {
-                throw new Error(`استجابة غير صالحة من الخادم (رمز الحالة: ${res.status} ${res.statusText})`);
+                console.error('[Question Import] Server returned non-JSON response:', res.status, resText);
+                throw new Error(`حدث خطأ في استجابة الخادم (رمز الحالة: ${res.status} ${res.statusText || ''}). يرجى التأكد من تشغيل الخادم وتوفر الاتصال.`);
             }
 
             if (!res.ok || !json?.success) {
-                setError(json?.message || `فشل في تحليل الأسئلة (رمز: ${res.status})`);
+                setError(json?.message || `فشل في تحليل الأسئلة (رمز الخطأ: ${res.status})`);
                 return;
             }
 
@@ -321,10 +323,12 @@ function QuestionImportContent() {
                 body: JSON.stringify(payload),
             });
             let json: any = null;
+            const resText = await res.text();
             try {
-                json = await res.json();
+                json = JSON.parse(resText);
             } catch {
-                throw new Error(`استجابة غير صالحة من الخادم أثناء الحفظ (رمز: ${res.status})`);
+                console.error('[Question Import Save] Server returned non-JSON response:', res.status, resText);
+                throw new Error(`حدث خطأ في استجابة الخادم أثناء الحفظ (رمز: ${res.status} ${res.statusText || ''})`);
             }
             if (!res.ok || !json?.success) {
                 setError(json?.message || 'حدث خطأ أثناء استيراد الأسئلة');

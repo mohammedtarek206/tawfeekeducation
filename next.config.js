@@ -29,6 +29,7 @@ const nextConfig = {
         serverActions: {
             bodySizeLimit: '8mb',
         },
+        serverComponentsExternalPackages: ['pdf-parse', '@napi-rs/canvas', 'mammoth'],
     },
     async headers() {
 
