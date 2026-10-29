@@ -108,46 +108,144 @@ async function calculateLevel(points: number): Promise<number> {
     return 1;
 }
 
-export async function getLeaderboard(limit = 10): Promise<
-    Array<{
-        rank: number;
-        studentId: string;
-        name: string;
-        points: number;
-        level: number;
-        grade?: string;
-    }>
-> {
+export interface LeaderboardQueryOptions {
+    limit?: number;
+    grade?: string;
+    includeZeroPoints?: boolean;
+    search?: string;
+}
+
+export interface LeaderboardStudentItem {
+    rank: number;
+    studentId: string;
+    name: string;
+    phone?: string;
+    avatar: string | null;
+    grade?: string;
+    points: number;
+    level: number;
+    updatedAt?: Date;
+}
+
+/**
+ * جلب لوحة الشرف التلقائية مرتبة تنازلياً حسب رصيد النقاط الفعلي
+ * مع تطبيق معايير كسر التعادل الثابتة (تاريخ الوصول للنقاط ثم المعرف _id)
+ */
+export async function getLeaderboard(
+    options: number | LeaderboardQueryOptions = 10
+): Promise<LeaderboardStudentItem[]> {
     await connectDB();
 
-    const students = await User.find({ role: 'student', status: 'approved' })
-        .select('name points level grade')
-        .sort({ points: -1 })
+    const limit = typeof options === 'number' ? options : (options.limit || 10);
+    const grade = typeof options === 'object' ? options.grade : undefined;
+    const includeZeroPoints = typeof options === 'object' ? Boolean(options.includeZeroPoints) : false;
+    const search = typeof options === 'object' ? options.search?.trim() : undefined;
+
+    const filter: Record<string, any> = {
+        role: 'student',
+        status: 'approved',
+    };
+
+    if (grade && grade !== 'all' && grade.trim() !== '') {
+        if (grade === 'second_secondary') {
+            filter.grade = { $in: ['second_secondary', 'second_secondary_baccalaureate'] };
+        } else {
+            filter.grade = grade.trim();
+        }
+    }
+
+    if (!includeZeroPoints) {
+        filter.points = { $gt: 0 };
+    } else {
+        filter.points = { $gte: 0 };
+    }
+
+    if (search) {
+        const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const regex = new RegExp(escaped, 'i');
+        filter.$or = [{ name: regex }, { phone: regex }];
+    }
+
+    // الترتيب الأساسي تنازلياً حسب مجموع النقاط
+    // وعند تساوي النقاط: الأسبقية لمن وصل إلى الرصيد أولاً (updatedAt تصاعدياً) ثم المعرف _id كعامل حاسم ثابت
+    const students = await User.find(filter)
+        .select('name phone avatar grade points level updatedAt')
+        .sort({ points: -1, updatedAt: 1, _id: 1 })
         .limit(limit)
         .lean();
 
     return students.map((s: any, i) => ({
         rank: i + 1,
         studentId: s._id.toString(),
-        name: s.name,
-        points: s.points,
-        level: s.level,
-        grade: s.grade,
+        name: s.name || 'طالب متميز',
+        phone: s.phone || '',
+        avatar: s.avatar || null,
+        grade: s.grade || '',
+        points: typeof s.points === 'number' ? s.points : 0,
+        level: s.level || 1,
+        updatedAt: s.updatedAt,
     }));
 }
 
-export async function getStudentRank(studentId: string): Promise<number> {
+/**
+ * حساب مركز الطالب بدقة متوافقة 100% مع ترتيب لوحة الشرف
+ */
+export async function getStudentRank(
+    studentId: string,
+    options?: { grade?: string; includeZeroPoints?: boolean }
+): Promise<number | null> {
     await connectDB();
-    const student: any = await User.findById(studentId).select('points').lean();
-    if (!student) return 0;
+    const student: any = await User.findById(studentId).select('points role status grade updatedAt').lean();
+    if (!student || student.role !== 'student' || student.status !== 'approved') return null;
 
-    const rank = await User.countDocuments({
+    const studentPoints = typeof student.points === 'number' ? student.points : 0;
+    const includeZeroPoints = options?.includeZeroPoints ?? false;
+
+    if (!includeZeroPoints && studentPoints <= 0) {
+        return null;
+    }
+
+    const filter: Record<string, any> = {
         role: 'student',
         status: 'approved',
-        points: { $gt: student.points },
-    });
+    };
 
-    return rank + 1;
+    if (options?.grade && options.grade !== 'all') {
+        if (options.grade === 'second_secondary') {
+            filter.grade = { $in: ['second_secondary', 'second_secondary_baccalaureate'] };
+        } else {
+            filter.grade = options.grade;
+        }
+    }
+
+    if (!includeZeroPoints) {
+        filter.points = { $gt: 0 };
+    }
+
+    // معايير الترتيب التنافسي المطابقة تماماً لفرز لوحة الشرف
+    const tieConditions: any[] = [{ points: { $gt: studentPoints } }];
+
+    if (student.updatedAt) {
+        tieConditions.push({
+            points: studentPoints,
+            updatedAt: { $lt: student.updatedAt },
+        });
+        tieConditions.push({
+            points: studentPoints,
+            updatedAt: student.updatedAt,
+            _id: { $lt: student._id },
+        });
+    } else {
+        tieConditions.push({
+            points: studentPoints,
+            _id: { $lt: student._id },
+        });
+    }
+
+    filter.$or = tieConditions;
+
+    const countAhead = await User.countDocuments(filter);
+    return countAhead + 1;
 }
 
 export async function updateStreak(studentId: string): Promise<number> {

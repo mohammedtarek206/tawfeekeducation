@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/db/connect';
 import User from '@/lib/db/models/User';
 import PointTransaction from '@/lib/db/models/PointTransaction';
-import HonorBoard from '@/lib/db/models/HonorBoard';
 import { withStudent } from '@/lib/auth/middleware';
 import { JWTPayload } from '@/lib/auth/jwt';
 import { getLeaderboard, getStudentRank } from '@/lib/gamification/engine';
+import { getHonorBoardSettings } from '@/lib/settings/honorBoard';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -26,46 +26,25 @@ async function handler(req: NextRequest, _ctx: unknown, student: JWTPayload): Pr
         .limit(limit)
         .lean();
 
-    // Check if there are admin-approved honor board students
-    const honorEntries = await HonorBoard.find()
-        .sort({ rank: 1, createdAt: 1 })
-        .limit(5)
-        .populate({ path: 'student', select: 'name points level grade' })
-        .lean();
+    const settings = await getHonorBoardSettings();
 
-    let leaderboard: Array<{
-        rank: number;
-        studentId: string;
-        name: string;
-        points: number;
-        level: number;
-        grade?: string;
-    }>;
+    // جلب أفضل 5 طلاب في لوحة الشرف التلقائية
+    const leaderboardRaw = await getLeaderboard({
+        limit: 5,
+        includeZeroPoints: settings.showZeroPoints,
+    });
 
-    let rank: number;
+    const leaderboard = leaderboardRaw.map((s) => ({
+        rank: s.rank,
+        studentId: s.studentId,
+        name: s.name,
+        points: s.points,
+        level: s.level,
+        grade: s.grade,
+    }));
 
-    if (honorEntries.length > 0) {
-        leaderboard = honorEntries
-            .filter((e: any) => e.student)
-            .map((e: any) => ({
-                rank: e.rank,
-                studentId: e.student._id.toString(),
-                name: e.student.name,
-                points: e.student.points || 0,
-                level: e.student.level || 1,
-                grade: e.student.grade,
-            }));
-
-        const myHonor = await HonorBoard.findOne({ student: student.userId });
-        if (myHonor) {
-            rank = myHonor.rank;
-        } else {
-            rank = await getStudentRank(student.userId);
-        }
-    } else {
-        leaderboard = await getLeaderboard(5);
-        rank = await getStudentRank(student.userId);
-    }
+    // مركز الطالب الحالي الفعلي
+    const currentRank = (await getStudentRank(student.userId, { includeZeroPoints: settings.showZeroPoints })) || 0;
 
     const formattedTransactions = transactions.map((t: any) => ({
         id: t._id,
@@ -76,16 +55,22 @@ async function handler(req: NextRequest, _ctx: unknown, student: JWTPayload): Pr
         createdAt: t.createdAt,
     }));
 
-    return NextResponse.json({
+    const response = NextResponse.json({
         success: true,
         data: {
             balance: studentUser.points || 0,
             level: studentUser.level || 1,
-            rank,
+            rank: currentRank,
             leaderboard,
             transactions: formattedTransactions,
         },
     });
+
+    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    response.headers.set('Pragma', 'no-cache');
+    response.headers.set('Expires', '0');
+
+    return response;
 }
 
 export const GET = withStudent(handler);

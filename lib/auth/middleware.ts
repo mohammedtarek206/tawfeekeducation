@@ -9,7 +9,7 @@ export interface ApiContext {
     params?: Record<string, string>;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 type RouteHandler = (req: NextRequest, context: any, user: JWTPayload) => Promise<NextResponse>;
 
 export function withAuth(handler: RouteHandler, requiredRoles?: string[]) {

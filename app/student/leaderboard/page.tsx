@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { gradeLabel } from '@/lib/constants/grades';
+import { gradeLabel, ACTIVE_GRADES } from '@/lib/constants/grades';
 
 interface LeaderboardEntry {
     rank: number;
@@ -11,17 +11,25 @@ interface LeaderboardEntry {
     grade: string;
     level: number;
     points: number;
-    note?: string;
     isMe: boolean;
 }
 
+interface LeaderboardSettings {
+    limit: number;
+    viewMode: 'all' | 'by_grade';
+    showZeroPoints: boolean;
+}
+
 interface LeaderboardData {
+    enabled: boolean;
+    message?: string;
     leaderboard: LeaderboardEntry[];
     totalHonored: number;
     myRank: number | null;
     isInHonorBoard: boolean;
     topStudentName: string | null;
     lastUpdated: string;
+    settings?: LeaderboardSettings;
 }
 
 const PODIUM_CONFIG: Record<
@@ -34,38 +42,38 @@ const PODIUM_CONFIG: Record<
         icon: string;
         title: string;
         ring: string;
-        height: string;
+        order: string;
     }
 > = {
     1: {
-        bg: 'bg-gradient-to-b from-amber-50 to-amber-100/60',
+        bg: 'bg-gradient-to-b from-amber-50 to-amber-100/70',
         border: 'border-amber-400',
         badgeBg: 'bg-gradient-to-r from-amber-500 to-yellow-500',
         text: 'text-amber-800',
         icon: '👑',
         title: 'المركز الأول',
-        ring: 'ring-amber-400',
-        height: 'sm:order-2 sm:-translate-y-4',
+        ring: 'ring-4 ring-amber-400 ring-offset-2',
+        order: 'sm:order-2 sm:-translate-y-4 shadow-xl',
     },
     2: {
-        bg: 'bg-gradient-to-b from-slate-50 to-slate-100/60',
+        bg: 'bg-gradient-to-b from-slate-50 to-slate-100/70',
         border: 'border-slate-300',
         badgeBg: 'bg-gradient-to-r from-slate-400 to-gray-500',
         text: 'text-slate-700',
         icon: '🥈',
         title: 'المركز الثاني',
-        ring: 'ring-slate-300',
-        height: 'sm:order-1',
+        ring: 'ring-4 ring-slate-300 ring-offset-2',
+        order: 'sm:order-1 shadow-md',
     },
     3: {
-        bg: 'bg-gradient-to-b from-orange-50 to-orange-100/60',
+        bg: 'bg-gradient-to-b from-orange-50 to-orange-100/70',
         border: 'border-orange-300',
         badgeBg: 'bg-gradient-to-r from-amber-600 to-orange-500',
         text: 'text-orange-800',
         icon: '🥉',
         title: 'المركز الثالث',
-        ring: 'ring-orange-300',
-        height: 'sm:order-3',
+        ring: 'ring-4 ring-orange-300 ring-offset-2',
+        order: 'sm:order-3 shadow-md',
     },
 };
 
@@ -124,6 +132,7 @@ function StudentAvatar({
 
 export default function StudentLeaderboardPage() {
     const [data, setData] = useState<LeaderboardData | null>(null);
+    const [selectedGrade, setSelectedGrade] = useState<string>('all');
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
@@ -131,7 +140,8 @@ export default function StudentLeaderboardPage() {
         setLoading(true);
         setError(null);
         try {
-            const res = await fetch('/api/student/leaderboard', {
+            const gradeQuery = selectedGrade && selectedGrade !== 'all' ? `?grade=${selectedGrade}` : '';
+            const res = await fetch(`/api/student/leaderboard${gradeQuery}`, {
                 cache: 'no-store',
             });
             const json = await res.json();
@@ -145,14 +155,14 @@ export default function StudentLeaderboardPage() {
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [selectedGrade]);
 
     useEffect(() => {
         fetchData();
     }, [fetchData]);
 
-    const topThree = data ? data.leaderboard.filter((e) => e.rank <= 3) : [];
-    const restOfStudents = data ? data.leaderboard.filter((e) => e.rank > 3) : [];
+    const topThree = data && data.enabled ? data.leaderboard.filter((e) => e.rank <= 3) : [];
+    const restOfStudents = data && data.enabled ? data.leaderboard.filter((e) => e.rank > 3) : [];
 
     return (
         <div className="space-y-8 pb-16 animate-fadeIn" dir="rtl">
@@ -170,13 +180,13 @@ export default function StudentLeaderboardPage() {
                     <div>
                         <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-gold/20 text-gold-light border border-gold/30 text-xs font-bold mb-3">
                             <span>✨</span>
-                            <span>الطلاب المعتمدون المتميزون</span>
+                            <span>الترتيب التلقائي للأبطال</span>
                         </div>
                         <h1 className="text-3xl sm:text-5xl font-black tracking-tight mb-3">
                             لوحة الشرف 🏆
                         </h1>
                         <p className="text-white/85 text-sm sm:text-base max-w-xl font-medium leading-relaxed">
-                            تضم لوحة الشرف نخبة الطلاب المتميزين الذين تم اعتمادهم وتكريمهم يدويًا من قِبل إدارة ومعلم منصة التوفيق تقديرًا لجهودهم وتفوقهم.
+                            تضم لوحة الشرف نخبة الطلاب الأكثر تميزاً واجتهاداً، يتم ترتيبهم تلقائياً بنسبة 100% وفق رصيد النقاط الفعلي المحقق من مشاهدة الحصص، واجتياز الاختبارات، وإنجاز المهام.
                         </p>
                     </div>
 
@@ -189,31 +199,77 @@ export default function StudentLeaderboardPage() {
                             <span className={loading ? 'animate-spin inline-block' : ''}>🔄</span>
                             <span>تحديث اللوحة</span>
                         </button>
-                        {data && data.totalHonored > 0 && (
+                        {data && data.enabled && data.totalHonored > 0 && (
                             <div className="bg-white/10 px-4 py-2 rounded-2xl text-xs font-bold text-white/90 border border-white/10">
-                                {data.totalHonored} طلاب في لوحة الشرف
+                                {data.totalHonored} طلاب متصدرين
                             </div>
                         )}
                     </div>
                 </div>
             </div>
 
-            {/* Current Student Congratulatory Banner (if honored) */}
-            {!loading && data && data.isInHonorBoard && data.myRank && (
-                <div className="bg-gradient-to-l from-amber-500 via-amber-400 to-yellow-400 text-amber-950 rounded-3xl p-6 shadow-lg flex items-center justify-between gap-4 border border-amber-300 animate-bounce-subtle">
-                    <div className="flex items-center gap-4">
+            {/* Grade Filter Tabs */}
+            <div className="bg-white rounded-2xl p-2 border border-gray-100 shadow-sm flex flex-wrap items-center gap-2">
+                <button
+                    onClick={() => setSelectedGrade('all')}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                        selectedGrade === 'all'
+                            ? 'bg-forest text-white shadow-sm'
+                            : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
+                    }`}
+                >
+                    🌐 جميع الصفوف
+                </button>
+                {ACTIVE_GRADES.map((g) => (
+                    <button
+                        key={g.value}
+                        onClick={() => setSelectedGrade(g.value)}
+                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                            selectedGrade === g.value
+                                ? 'bg-forest text-white shadow-sm'
+                                : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
+                        }`}
+                    >
+                        📚 {g.label}
+                    </button>
+                ))}
+            </div>
+
+            {/* Board Disabled Notice */}
+            {!loading && data && !data.enabled && (
+                <div className="bg-amber-50 border-2 border-amber-200 rounded-3xl p-10 text-center space-y-4">
+                    <div className="w-16 h-16 bg-amber-100 text-amber-700 rounded-2xl flex items-center justify-center text-3xl mx-auto shadow-inner">
+                        ⏸️
+                    </div>
+                    <h3 className="text-xl font-black text-amber-950">لوحة الشرف متوقفة مؤقتًا</h3>
+                    <p className="text-sm text-amber-800 max-w-md mx-auto leading-relaxed">
+                        {data.message || 'لوحة الشرف متوقفة حاليًا بقرار من الإدارة لأعمال التحديث وتدقيق النقاط. ستعود قريباً بإذن الله.'}
+                    </p>
+                </div>
+            )}
+
+            {/* Current Student Congratulatory Banner (if ranked) */}
+            {!loading && data && data.enabled && data.myRank && (
+                <div className="bg-gradient-to-l from-amber-500 via-amber-400 to-yellow-400 text-amber-950 rounded-3xl p-6 shadow-lg flex flex-col sm:flex-row items-center justify-between gap-4 border border-amber-300">
+                    <div className="flex items-center gap-4 text-center sm:text-right">
                         <div className="w-14 h-14 bg-white/40 rounded-2xl flex items-center justify-center text-3xl shadow-inner shrink-0">
                             🎉
                         </div>
                         <div>
-                            <div className="text-lg font-black">مبارك! أنت ضمن أبطال لوحة الشرف</div>
+                            <div className="text-lg font-black">
+                                {data.isInHonorBoard
+                                    ? 'مبارك! أنت ضمن أبطال لوحة الشرف'
+                                    : 'أنت في الطريق إلى قمة لوحة الشرف!'}
+                            </div>
                             <div className="text-sm font-semibold text-amber-900/80">
-                                تم اعتمادك رسميًا من الإدارة بالمركز رقم #{data.myRank}. فخورون بك وبتميزك المستمر!
+                                {data.isInHonorBoard
+                                    ? `مركزك الحالي هو #${data.myRank} وفق رصيد نقاطك الفعلي. فخورون بجهدك ومثابرتك المستمرة!`
+                                    : `مركزك العام هو #${data.myRank}. استمر في استكمال الحصص والاختبارات لتصعد إلى قائمة المتصدرين!`}
                             </div>
                         </div>
                     </div>
-                    <div className="text-center shrink-0 bg-white/60 px-5 py-3 rounded-2xl border border-white shadow-sm">
-                        <span className="text-[11px] font-bold block text-amber-900">مركزك</span>
+                    <div className="text-center shrink-0 bg-white/70 px-6 py-3 rounded-2xl border border-white shadow-sm">
+                        <span className="text-[11px] font-bold block text-amber-900">مركزك الحالي</span>
                         <span className="text-3xl font-black text-amber-900">#{data.myRank}</span>
                     </div>
                 </div>
@@ -242,22 +298,22 @@ export default function StudentLeaderboardPage() {
             )}
 
             {/* Empty State */}
-            {!loading && !error && data && data.leaderboard.length === 0 && (
+            {!loading && !error && data && data.enabled && data.leaderboard.length === 0 && (
                 <div className="bg-white rounded-3xl border border-gray-100 p-16 text-center shadow-sm space-y-4">
                     <div className="w-20 h-20 bg-amber-50 text-amber-500 rounded-full flex items-center justify-center text-4xl mx-auto shadow-inner">
                         🏆
                     </div>
-                    <h3 className="text-xl font-black text-gray-800">لا يوجد طلاب في لوحة الشرف حاليًا</h3>
+                    <h3 className="text-xl font-black text-gray-800">لا يوجد طلاب متصدرون في هذا القسم حاليًا</h3>
                     <p className="text-sm text-gray-500 max-w-md mx-auto">
-                        سيقوم الأدمن والمعلم باعتماد الطلاب المتفوقين قريبًا وتحديد ترتيبهم داخل لوحة الشرف. اجتهد وكن في صدارة المتميزين!
+                        كن أول من يكتسب النقاط ويحتل المركز الأول من خلال مشاهدة الحصص التعليمية واجتياز الامتحانات!
                     </p>
                 </div>
             )}
 
             {/* Honored Students Content */}
-            {!loading && !error && data && data.leaderboard.length > 0 && (
+            {!loading && !error && data && data.enabled && data.leaderboard.length > 0 && (
                 <div className="space-y-8">
-                    {/* Top 3 Podium (If any top 3 exist) */}
+                    {/* Top 3 Podium */}
                     {topThree.length > 0 && (
                         <div>
                             <div className="text-center mb-6">
@@ -266,7 +322,7 @@ export default function StudentLeaderboardPage() {
                                     <span>أوائل منصة التوفيق</span>
                                 </h2>
                                 <p className="text-xs text-gray-400 font-semibold mt-1">
-                                    المراكز الأولى المعتمدة من قِبل إدارة المنصة
+                                    أعلى الطلاب رصيداً للنقاط التعليمية في المنصة
                                 </p>
                             </div>
 
@@ -280,7 +336,7 @@ export default function StudentLeaderboardPage() {
                                     return (
                                         <div
                                             key={entry.studentId}
-                                            className={`rounded-3xl border-2 ${cfg.bg} ${cfg.border} p-6 text-center transition-all duration-300 hover:shadow-xl relative ${cfg.height} ${
+                                            className={`rounded-3xl border-2 ${cfg.bg} ${cfg.border} p-6 text-center transition-all duration-300 hover:shadow-xl relative ${cfg.order} ${
                                                 entry.isMe ? 'ring-4 ring-emerald-500 ring-offset-2' : ''
                                             }`}
                                         >
@@ -314,14 +370,8 @@ export default function StudentLeaderboardPage() {
                                                 {gradeLabel(entry.grade) || 'طالب متميز'}
                                             </div>
 
-                                            {entry.note && (
-                                                <div className="text-[11px] font-bold text-amber-700 bg-amber-100/70 rounded-xl px-3 py-1 mt-2 inline-block">
-                                                    {entry.note}
-                                                </div>
-                                            )}
-
-                                            <div className={`mt-4 pt-3 border-t border-black/5`}>
-                                                <div className="text-xs text-gray-500 font-medium">النقاط الحالية</div>
+                                            <div className="mt-4 pt-3 border-t border-black/5">
+                                                <div className="text-xs text-gray-500 font-medium">مجموع النقاط</div>
                                                 <div className={`text-2xl font-black ${cfg.text}`}>
                                                     {entry.points.toLocaleString()}
                                                     <span className="text-xs font-bold mr-1">نقطة</span>
@@ -340,14 +390,14 @@ export default function StudentLeaderboardPage() {
                             <div>
                                 <h3 className="font-black text-gray-900 text-base flex items-center gap-2">
                                     <span>📋</span>
-                                    <span>ترتيب لوحة الشرف الكامل</span>
+                                    <span>ترتيب لوحة الشرف التلقائي</span>
                                 </h3>
                                 <p className="text-xs text-gray-400 mt-0.5">
-                                    مرتَّب حسب الترتيب اليدوي المعتمد من الأدمن
+                                    مرتب تنازلياً حسب مجموع النقاط الفعلي لكل طالب
                                 </p>
                             </div>
-                            <span className="text-xs font-bold text-gray-500 bg-offwhite px-3 py-1.5 rounded-full">
-                                إجمالي المعتمدين: {data.totalHonored}
+                            <span className="text-xs font-bold text-gray-600 bg-gray-100 px-3 py-1.5 rounded-full">
+                                إجمالي المعروضين: {data.leaderboard.length} طالب
                             </span>
                         </div>
 
@@ -358,7 +408,7 @@ export default function StudentLeaderboardPage() {
                                         <th className="px-6 py-3.5 text-right w-20">المركز</th>
                                         <th className="px-6 py-3.5 text-right">الطالب</th>
                                         <th className="px-6 py-3.5 text-right hidden sm:table-cell">الصف الدراسي</th>
-                                        <th className="px-6 py-3.5 text-center hidden md:table-cell">ملاحظة التميز</th>
+                                        <th className="px-6 py-3.5 text-center hidden md:table-cell">المستوى</th>
                                         <th className="px-6 py-3.5 text-center">النقاط</th>
                                     </tr>
                                 </thead>
@@ -372,7 +422,7 @@ export default function StudentLeaderboardPage() {
                                                 key={entry.studentId}
                                                 className={`transition-colors ${
                                                     entry.isMe
-                                                        ? 'bg-emerald-50/60 font-bold border-r-4 border-emerald-500'
+                                                        ? 'bg-emerald-50/70 font-bold border-r-4 border-emerald-500'
                                                         : isTop3
                                                         ? 'hover:bg-amber-50/30'
                                                         : 'hover:bg-gray-50/60'
@@ -427,15 +477,11 @@ export default function StudentLeaderboardPage() {
                                                     </span>
                                                 </td>
 
-                                                {/* Note */}
+                                                {/* Level */}
                                                 <td className="px-6 py-4 text-center hidden md:table-cell">
-                                                    {entry.note ? (
-                                                        <span className="text-xs text-amber-800 bg-amber-50 border border-amber-200/60 px-3 py-1 rounded-full font-medium">
-                                                            {entry.note}
-                                                        </span>
-                                                    ) : (
-                                                        <span className="text-gray-300 text-xs">—</span>
-                                                    )}
+                                                    <span className="bg-forest/10 text-forest px-2.5 py-1 rounded-lg text-xs font-bold">
+                                                        المستوى {entry.level}
+                                                    </span>
                                                 </td>
 
                                                 {/* Points */}
@@ -464,8 +510,11 @@ export default function StudentLeaderboardPage() {
                             </table>
                         </div>
 
-                        <div className="px-6 py-4 bg-gray-50/50 border-t border-gray-100 text-xs text-gray-400 text-center font-medium">
-                            🔒 جميع الطلاب في هذه القائمة تم اعتمادهم رسميًا من قِبل إدارة المنصة • الترتيب يدوي ومحدد بدقة
+                        <div className="px-6 py-4 bg-gray-50/50 border-t border-gray-100 text-xs text-gray-500 text-center font-medium flex items-center justify-center gap-2">
+                            <span>⭐</span>
+                            <span>
+                                يتم تحديث لوحة الشرف تلقائيًا وفوريًا عند اكتساب أو خصم أو تصفير أي نقاط تعليمية • الترتيب يعتمد على الجدارة والنقاط الفعلية
+                            </span>
                         </div>
                     </div>
                 </div>
