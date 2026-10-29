@@ -92,6 +92,46 @@ export default function AdminStudentsPage() {
         }
     };
 
+    const handleResetPoints = async (id: string, name: string, currentPoints: number) => {
+        if (currentPoints <= 0) {
+            alert('رصيد الطالب صفر بالفعل ولا توجد نقاط لتصفيرها');
+            return;
+        }
+
+        if (!confirm(`⚠️ تأكيد تصفير النقاط:\nهل أنت متأكد من تصفير رصيد الطالب (${name})؟\nالرصيد الحالي: ${currentPoints} نقطة\nسيصبح الرصيد 0 مع الحفاظ التام على السجل والتاريخ.`)) {
+            return;
+        }
+
+        const reason = prompt(`اكتب سبب تصفير نقاط الطالب (${name}):`, 'تصفير إداري للرصيد');
+        if (!reason || reason.trim().length < 3) {
+            alert('السبب مطلوب (3 أحرف على الأقل)');
+            return;
+        }
+
+        try {
+            const res = await fetch('/api/admin/points/deduct', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    studentId: id,
+                    operationType: 'reset',
+                    amount: currentPoints,
+                    reason: reason.trim(),
+                    requestId: `reset-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                }),
+            });
+            const result = await res.json();
+            if (result.success) {
+                alert(result.message || 'تم تصفير نقاط الطالب بنجاح');
+                loadData();
+            } else {
+                alert(result.message || 'حدث خطأ في تصفير النقاط');
+            }
+        } catch {
+            alert('حدث خطأ في الاتصال بالخادم');
+        }
+    };
+
     const handleDelete = async (id: string, name: string) => {
         if (!confirm(`⚠️ تحذير: هل أنت متأكد تماماً من حذف الطالب (${name}) بشكل نهائي؟\nسيتم حذف جميع سجلاته واختباراته وتطبيقاته من النظام ولا يمكن التراجع عن هذا الإجراء.`)) return;
 
@@ -219,6 +259,15 @@ export default function AdminStudentsPage() {
                                                 >
                                                     ✏️ تعديل
                                                 </button>
+                                                {st.points > 0 && (
+                                                    <button
+                                                        onClick={() => handleResetPoints(st._id, st.name, st.points)}
+                                                        title="تصفير نقاط الطالب بالكامل إلى صفر"
+                                                        className="text-xs bg-red-50 hover:bg-red-100 text-red-700 px-2 py-0.5 rounded border border-red-200 font-bold transition-colors"
+                                                    >
+                                                        🔄 تصفير
+                                                    </button>
+                                                )}
                                             </div>
                                         </td>
                                         <td className="px-6 py-4 text-center">

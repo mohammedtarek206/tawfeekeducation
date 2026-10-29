@@ -37,8 +37,6 @@ function detectDuplicates(
 // POST /api/admin/questions/parse — parse text or uploaded file (TXT, DOCX, PDF) and return preview
 async function parseHandler(req: NextRequest, _ctx: unknown, _admin: JWTPayload): Promise<NextResponse> {
     try {
-        await connectDB();
-
         const contentType = req.headers.get('content-type') || '';
         let text = '';
 
@@ -92,7 +90,7 @@ async function parseHandler(req: NextRequest, _ctx: unknown, _admin: JWTPayload)
             return NextResponse.json(
                 {
                     success: false,
-                    message: 'لم يتم التعرف على أي أسئلة صالحة. يرجى التأكد من اتباع الصيغة المحددة (س: السؤال ثم الخيارات والإجابة).',
+                    message: 'لم يتم التعرف على أي أسئلة صالحة. يرجى التأكد من اتباع الصيغة المحددة (س: السؤال ثم ج: الإجابة أو الخيارات).',
                 },
                 { status: 400 }
             );
@@ -101,13 +99,15 @@ async function parseHandler(req: NextRequest, _ctx: unknown, _admin: JWTPayload)
         // Check for duplicates in DB safely
         let existingQuestions: Array<{ text: string }> = [];
         try {
+            await connectDB();
             const questionTexts = parsed.map((p) => p.text.trim()).filter(Boolean);
-            existingQuestions = await Question.find({
+            existingQuestions = (await Question.find({
                 text: { $in: questionTexts },
             })
                 .select('text')
-                .lean() as Array<{ text: string }>;
-        } catch {
+                .lean()) as Array<{ text: string }>;
+        } catch (dbErr) {
+            console.warn('[Question Parse] Database duplicate check warning:', dbErr);
             existingQuestions = [];
         }
 
@@ -144,7 +144,7 @@ async function parseHandler(req: NextRequest, _ctx: unknown, _admin: JWTPayload)
 async function importHandler(req: NextRequest, _ctx: unknown, admin: JWTPayload): Promise<NextResponse> {
     try {
         await connectDB();
-        const body = await req.json();
+        const body = await req.json().catch(() => ({}));
         const { questions, grade, subject, difficulty, examId } = body;
 
         if (!questions || !Array.isArray(questions) || !questions.length) {
@@ -163,7 +163,7 @@ async function importHandler(req: NextRequest, _ctx: unknown, admin: JWTPayload)
         }
 
         const effectiveGrade = grade || targetExam?.grade;
-        const effectiveSubject = subject || targetExam?.subject;
+        const effectiveSubject = subject || targetExam?.subject || 'uncategorized';
 
         if (!effectiveGrade) return NextResponse.json({ success: false, message: 'يرجى تحديد الصف الدراسي' }, { status: 400 });
         if (!effectiveSubject) return NextResponse.json({ success: false, message: 'يرجى تحديد المادة الدراسية' }, { status: 400 });
@@ -174,12 +174,13 @@ async function importHandler(req: NextRequest, _ctx: unknown, admin: JWTPayload)
                 let parsedChoices: Array<{ text: string; isCorrect: boolean }> = [];
                 const qType = (q.type === 'essay' ? 'essay' : q.type === 'true_false' ? 'true_false' : 'mcq') as 'mcq' | 'true_false' | 'essay';
 
+                const answerText = (q.correctAnswer || q.modelAnswer || q.answer || '').trim();
+
                 if (qType === 'mcq') {
                     const opts = Array.isArray(q.options) ? q.options : [];
-                    const cAns = (q.correctAnswer || q.answer || '').trim();
                     parsedChoices = opts.map((opt: string, i: number) => ({
                         text: typeof opt === 'string' ? opt.trim() : String(opt),
-                        isCorrect: i === q.correctIndex || opt.trim() === cAns,
+                        isCorrect: i === q.correctIndex || opt.trim() === answerText,
                     }));
 
                     // If still no correct answer found and options exist, fallback to first choice
@@ -187,8 +188,7 @@ async function importHandler(req: NextRequest, _ctx: unknown, admin: JWTPayload)
                         parsedChoices[0].isCorrect = true;
                     }
                 } else if (qType === 'true_false') {
-                    const ans = (q.correctAnswer || q.answer || '').trim();
-                    const isTrue = ans === 'صح' || ans.toLowerCase() === 'true' || ans === 'صحيح' || q.correctIndex === 0;
+                    const isTrue = answerText === 'صح' || answerText.toLowerCase() === 'true' || answerText === 'صحيح' || q.correctIndex === 0;
                     parsedChoices = [
                         { text: 'صح', isCorrect: isTrue },
                         { text: 'خطأ', isCorrect: !isTrue },
@@ -204,9 +204,9 @@ async function importHandler(req: NextRequest, _ctx: unknown, admin: JWTPayload)
                     text: q.text.trim(),
                     type: qType,
                     choices: parsedChoices,
-                    correctAnswer: qType !== 'essay' ? (q.correctAnswer || q.answer || undefined) : undefined,
+                    correctAnswer: answerText || undefined,
                     explanation: q.explanation ? String(q.explanation).trim() : undefined,
-                    modelAnswer: qType === 'essay' ? String(q.modelAnswer || q.correctAnswer || q.answer || '').trim() || undefined : undefined,
+                    modelAnswer: qType === 'essay' ? answerText || undefined : undefined,
                     gradingCriteria: qType === 'essay' ? String(q.gradingCriteria || '').trim() || undefined : undefined,
                     difficulty: difficulty || q.difficulty || 'medium',
                     subject: effectiveSubject,

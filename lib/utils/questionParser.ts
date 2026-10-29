@@ -64,7 +64,7 @@ const LABEL_INDEX_MAP: Record<string, number> = {
 export function parseQuestionsFromText(raw: string): ParsedItem[] {
     const results: ParsedItem[] = [];
 
-    // Normalize input
+    // Normalize input line endings and whitespace
     const normalized = raw
         .replace(/\r\n/g, '\n')
         .replace(/\r/g, '\n')
@@ -73,27 +73,31 @@ export function parseQuestionsFromText(raw: string): ParsedItem[] {
 
     if (!normalized) return results;
 
+    // Split on blank lines first
     const rawBlocks = normalized.split(/\n\s*\n+/);
     const finalBlocks: string[] = [];
+
+    // Regex to split consecutive questions that might not be separated by blank lines
+    const splitQuestionPattern = /\n(?=(?:نوع\s*السؤال\s*[:：\-–=/]?|(?:سـ?|Q)\s*(?:\(\d+\)|\d+)?\s*[:：\-–=/]|(?:سؤال|Question)\s*(?:\(\d+\)|\d+|رقم\s*\d+)?\s*[:：\-–=/]?|\d+[\.\-\)]\s+))/i;
 
     for (const b of rawBlocks) {
         const trimmed = b.trim();
         if (!trimmed) continue;
-        const subBlocks = trimmed.split(/\n(?=(?:س\s*[:：\-–]\s*\d*|سؤال\s*\d*[:：\-–]?|Q\s*[:：\-–]\s*\d*|Question\s*\d*[:：\-–]?|\d+[\.\-\)]\s+))/i);
+        const subBlocks = trimmed.split(splitQuestionPattern);
         for (const sb of subBlocks) {
             const sbt = sb.trim();
             if (sbt) finalBlocks.push(sbt);
         }
     }
 
-    const qTypeRegex = /^(?:نوع\s*السؤال|النوع|نوع)\s*[:：\-–]?\s*(.*)$/i;
-    const qPrefixRegex = /^(?:س\s*[:：\-–]\s*\d*|سؤال\s*\d*[:：\-–]?|Q\s*[:：\-–]\s*\d*|Question\s*\d*[:：\-–]?|\d+[\.\-\)]\s*)\s*/i;
+    const qTypeRegex = /^(?:نوع\s*السؤال|النوع|نوع)\s*[:：\-–=/]?\s*(.*)$/i;
+    const qPrefixRegex = /^(?:(?:سـ?|Q)\s*(?:\(\d+\)|\d+)?\s*[:：\-–=/]\s*|(?:سؤال|Question)\s*(?:\(\d+\)|\d+|رقم\s*\d+)?\s*[:：\-–=/]?\s*|\d+[\.\-\)]\s*)\s*/i;
     const choicePrefixRegex = /^(?:[\(\[]?([أإآابتثجحخدذرزسشصضطظعغفقكلمنهويa-zA-Z0-9١-٩])[\)\]\.\-]|[\-\*•])\s+/;
-    const aPrefixRegex = /^(?:(?:الإجابة\s*الصحيحة|الاجابة\s*الصحيحة|الإجابة|الاجابة|إجابة|اجابة|الجواب|جواب(?:\s+هو|\s+هي)?|Answer)\s*[:：\-–=]?|(?:ج|A)\s*[:：\-–=])\s*(.*)$/i;
-    const pointsRegex = /^(?:الدرجة|درجة|النقاط|نقاط|درجات|Points?|Score)\s*[:：\-–]?\s*(\d+(?:\.\d+)?)/i;
-    const explanationRegex = /^(?:الشرح|شرح|التفسير|تفسير|توضيح|Explanation)\s*[:：\-–]?\s*(.*)$/i;
-    const modelAnswerRegex = /^(?:الإجابة\s*النموذجية|الاجابة\s*النموذجية|إجابة\s*نموذجية|اجابة\s*نموذجية|Model\s*Answer)\s*[:：\-–]?\s*(.*)$/i;
-    const rubricRegex = /^(?:معايير\s*التصحيح|معيار\s*التصحيح|معايير|Rubric|Grading\s*Criteria)\s*[:：\-–]?\s*(.*)$/i;
+    const aPrefixRegex = /^(?:(?:الإجابة\s*الصحيحة|الاجابة\s*الصحيحة|الإجابة|الاجابة|إجابة|اجابة|الجواب|جواب(?:\s+هو|\s+هي)?|Answer|Correct\s*Answer)\s*[:：\-–=/]?\s*|(?:جـ?|A)\s*[:：\-–=/]\s*)\s*(.*)$/i;
+    const pointsRegex = /^(?:الدرجة|درجة|النقاط|نقاط|درجات|علامة|علامات|Points?|Score|Grade)\s*[:：\-–=/]?\s*(\d+(?:\.\d+)?)/i;
+    const explanationRegex = /^(?:الشرح|شرح|التفسير|تفسير|توضيح|Explanation)\s*[:：\-–=/]?\s*(.*)$/i;
+    const modelAnswerRegex = /^(?:الإجابة\s*النموذجية|الاجابة\s*النموذجية|إجابة\s*نموذجية|اجابة\s*نموذجية|Model\s*Answer)\s*[:：\-–=/]?\s*(.*)$/i;
+    const rubricRegex = /^(?:معايير\s*التصحيح|معيار\s*التصحيح|معايير|Rubric|Grading\s*Criteria)\s*[:：\-–=/]?\s*(.*)$/i;
 
     for (const block of finalBlocks) {
         const lines = block.split('\n').map((l) => l.trim()).filter(Boolean);
@@ -171,91 +175,113 @@ export function parseQuestionsFromText(raw: string): ParsedItem[] {
                 questionText = line.replace(qPrefixRegex, '').trim();
                 if (!questionText) questionText = line.trim();
             } else if (!rawAnswer && !options.length && !modelAnswer) {
+                // Multi-line question text
                 questionText += ' ' + line.trim();
+            } else if (rawAnswer && !options.length && declaredType !== 'mcq') {
+                // Multi-line essay answer
+                rawAnswer += '\n' + line.trim();
             } else if (explanation && !modelAnswer) {
                 explanation += ' ' + line.trim();
             }
         }
 
-        if (!questionText || questionText.length < 2) continue;
+        // Clean question text of any leftover prefix
+        questionText = questionText.replace(qPrefixRegex, '').trim();
+        if (!questionText) continue;
 
-        let finalType: 'mcq' | 'true_false' | 'essay' = 'mcq';
+        let finalType: 'mcq' | 'true_false' | 'essay' = 'essay';
         let isValid = true;
         let errMsg: string | undefined;
         let finalCorrectAnswer = '';
         let finalCorrectIndex: number | undefined = undefined;
 
         const normAns = rawAnswer.trim().toLowerCase();
+        const hasText = questionText.length >= 3;
 
-        if (declaredType === 'essay' || (!options.length && (modelAnswer || gradingCriteria || normAns.length > 50))) {
-            finalType = 'essay';
-            finalCorrectAnswer = modelAnswer || rawAnswer;
-            if (!modelAnswer && rawAnswer) modelAnswer = rawAnswer;
-            isValid = questionText.length >= 3;
-            if (!isValid) errMsg = 'نص السؤال قصير جداً';
+        // Determine question type accurately
+        if (options.length >= 2) {
+            // MCQ Question
+            finalType = 'mcq';
+            const cleanAnsKey = rawAnswer.replace(/^[\(\[\{]/, '').replace(/[\)\]\}]$/, '').trim();
+            if (cleanAnsKey && LABEL_INDEX_MAP[cleanAnsKey] !== undefined) {
+                const mappedIdx = LABEL_INDEX_MAP[cleanAnsKey];
+                if (mappedIdx < options.length) {
+                    finalCorrectIndex = mappedIdx;
+                    finalCorrectAnswer = options[mappedIdx];
+                }
+            }
+
+            if (finalCorrectIndex === undefined && rawAnswer) {
+                const exactIdx = options.findIndex((opt) => opt.trim().toLowerCase() === normAns);
+                if (exactIdx !== -1) {
+                    finalCorrectIndex = exactIdx;
+                    finalCorrectAnswer = options[exactIdx];
+                } else {
+                    const partialIdx = options.findIndex(
+                        (opt) => opt.trim().toLowerCase().includes(normAns) || normAns.includes(opt.trim().toLowerCase())
+                    );
+                    if (partialIdx !== -1) {
+                        finalCorrectIndex = partialIdx;
+                        finalCorrectAnswer = options[partialIdx];
+                    }
+                }
+            }
+
+            if (finalCorrectIndex === undefined) {
+                isValid = false;
+                errMsg = rawAnswer
+                    ? `الإجابة المحددة ("${rawAnswer}") لا تطابق أيًا من الاختيارات المتاحة`
+                    : 'لم يتم تحديد الإجابة الصحيحة من بين الخيارات';
+            } else {
+                isValid = hasText;
+                if (!isValid) errMsg = 'نص السؤال قصير جداً';
+            }
         } else if (
             declaredType === 'true_false' ||
             (options.length === 0 && (
                 normAns === 'صح' || normAns === 'خطأ' ||
                 normAns === 'صحيح' || normAns === 'خاطئ' ||
                 normAns === 'true' || normAns === 'false'
-            )) ||
-            (options.length === 2 && (
-                (options[0].includes('صح') && options[1].includes('خطأ')) ||
-                (options[0].includes('خطأ') && options[1].includes('صح'))
             ))
         ) {
+            // True / False Question
             finalType = 'true_false';
             options.length = 0;
             options.push('صح', 'خطأ');
             if (normAns === 'صح' || normAns === 'صحيح' || normAns === 'true' || normAns === 'أ' || normAns === 'a') {
                 finalCorrectAnswer = 'صح';
                 finalCorrectIndex = 0;
+                isValid = hasText;
+                if (!isValid) errMsg = 'نص السؤال قصير جداً';
             } else if (normAns === 'خطأ' || normAns === 'خاطئ' || normAns === 'false' || normAns === 'ب' || normAns === 'b') {
                 finalCorrectAnswer = 'خطأ';
                 finalCorrectIndex = 1;
+                isValid = hasText;
+                if (!isValid) errMsg = 'نص السؤال قصير جداً';
             } else {
                 isValid = false;
                 errMsg = 'لم يتم تحديد إجابة صحيحة لسؤال صح/خطأ (يجب أن تكون صح أو خطأ)';
             }
-        } else {
+        } else if (options.length === 1) {
+            // Only 1 option provided
             finalType = 'mcq';
-            if (options.length < 2) {
+            isValid = false;
+            errMsg = 'يجب توفر خيارين على الأقل لسؤال الاختيار من متعدد';
+        } else {
+            // Essay / Short Answer Question (سؤال مقالي أو إجابة قصيرة)
+            finalType = 'essay';
+            finalCorrectAnswer = (modelAnswer || rawAnswer).trim();
+            if (!modelAnswer && rawAnswer) modelAnswer = rawAnswer.trim();
+
+            if (!hasText) {
                 isValid = false;
-                errMsg = 'يجب توفر خيارين على الأقل لسؤال الاختيار من متعدد';
+                errMsg = 'نص السؤال قصير جداً أو مفقود';
+            } else if (!finalCorrectAnswer) {
+                // Incomplete question (Question without answer)
+                isValid = false;
+                errMsg = 'السؤال غير مكتمل (لم يتم العثور على إجابة)';
             } else {
-                const cleanAnsKey = rawAnswer.replace(/^[\(\[\{]/, '').replace(/[\)\]\}]$/, '').trim();
-                if (cleanAnsKey && LABEL_INDEX_MAP[cleanAnsKey] !== undefined) {
-                    const mappedIdx = LABEL_INDEX_MAP[cleanAnsKey];
-                    if (mappedIdx < options.length) {
-                        finalCorrectIndex = mappedIdx;
-                        finalCorrectAnswer = options[mappedIdx];
-                    }
-                }
-
-                if (finalCorrectIndex === undefined && rawAnswer) {
-                    const normRaw = rawAnswer.trim().toLowerCase();
-                    const exactIdx = options.findIndex((opt) => opt.trim().toLowerCase() === normRaw);
-                    if (exactIdx !== -1) {
-                        finalCorrectIndex = exactIdx;
-                        finalCorrectAnswer = options[exactIdx];
-                    } else {
-                        const partialIdx = options.findIndex(
-                            (opt) => opt.trim().toLowerCase().includes(normRaw) || normRaw.includes(opt.trim().toLowerCase())
-                        );
-                        if (partialIdx !== -1) {
-                            finalCorrectIndex = partialIdx;
-                            finalCorrectAnswer = options[partialIdx];
-                        }
-                    }
-                }
-
-                if (finalCorrectIndex === undefined) {
-                    isValid = false;
-                    errMsg = rawAnswer
-                        ? `الإجابة المحددة ("${rawAnswer}") لا تطابق أيًا من الاختيارات المتاحة`
-                        : 'لم يتم تحديد الإجابة الصحيحة من بين الخيارات';
-                }
+                isValid = true;
             }
         }
 

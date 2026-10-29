@@ -31,23 +31,27 @@ async function getHandler(req: NextRequest, _ctx: unknown, _admin: JWTPayload): 
 
     const formatted = logs.map((log: any) => {
         const metadata = log.metadata || {};
-        let operationType: 'deduction' | 'reset' | 'adjustment' = 'deduction';
-        if (log.action === AUDIT_ACTIONS.POINTS_RESET || metadata.operationType === 'reset') {
+        let operationType: 'deduction' | 'reset' | 'adjustment' | 'bulk_reset' = 'deduction';
+        if (metadata.operationType === 'bulk_reset') {
+            operationType = 'bulk_reset';
+        } else if (log.action === AUDIT_ACTIONS.POINTS_RESET || metadata.operationType === 'reset') {
             operationType = 'reset';
         } else if (log.action === AUDIT_ACTIONS.POINTS_ADJUSTED) {
             operationType = 'adjustment';
         }
 
+        const isBulk = operationType === 'bulk_reset';
+
         return {
             id: log._id.toString(),
             actorId: log.actor?._id?.toString() || (typeof log.actor === 'string' ? log.actor : '—'),
             actorName: log.actor?.name || 'الأدمن',
-            studentId: log.target?._id?.toString() || log.target?.toString() || metadata.studentId || '—',
-            studentName: metadata.studentName || log.target?.name || '—',
+            studentId: isBulk ? 'bulk_all' : (log.target?._id?.toString() || log.target?.toString() || metadata.studentId || '—'),
+            studentName: isBulk ? `جميع الطلاب (${metadata.affectedCount ?? 0} طالب)` : (metadata.studentName || log.target?.name || '—'),
             operationType,
-            balanceBefore: metadata.balanceBefore ?? 0,
-            deductedAmount: metadata.deductedAmount ?? metadata.amount ?? 0,
-            balanceAfter: metadata.balanceAfter ?? metadata.newBalance ?? 0,
+            balanceBefore: isBulk ? (metadata.totalPointsRemoved ?? 0) : (metadata.balanceBefore ?? 0),
+            deductedAmount: isBulk ? (metadata.totalPointsRemoved ?? 0) : (metadata.deductedAmount ?? metadata.amount ?? 0),
+            balanceAfter: metadata.balanceAfter ?? (isBulk ? 0 : (metadata.newBalance ?? 0)),
             reason: metadata.reason || '—',
             createdAt: log.createdAt,
         };

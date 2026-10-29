@@ -19,7 +19,7 @@ interface AuditEntry {
     actorName: string;
     studentId: string;
     studentName: string;
-    operationType: 'deduction' | 'reset' | 'adjustment';
+    operationType: 'deduction' | 'reset' | 'adjustment' | 'bulk_reset';
     balanceBefore: number;
     balanceAfter: number;
     deductedAmount: number;
@@ -43,6 +43,11 @@ interface OverviewData {
     totalPointsAwarded: number;
     totalTransactions: number;
     transactions: Transaction[];
+}
+
+interface BulkResetStats {
+    affectedStudentsCount: number;
+    totalPointsToReset: number;
 }
 
 /* ─── Helpers ─── */
@@ -107,7 +112,7 @@ export default function AdminGamificationPage() {
     const [studentTransactions, setStudentTransactions] = useState<Transaction[]>([]);
     const [txLoading, setTxLoading] = useState(false);
 
-    // Deduct / Reset state
+    // Single student Deduct / Reset state
     const [operationType, setOperationType] = useState<'deduction' | 'reset'>('deduction');
     const [deductAmount, setDeductAmount] = useState('');
     const [deductReason, setDeductReason] = useState('');
@@ -116,6 +121,15 @@ export default function AdminGamificationPage() {
     const [submitting, setSubmitting] = useState(false);
     const [actionMsg, setActionMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
     const requestIdRef = useRef<string>(generateRequestId());
+
+    /* — Bulk Reset State — */
+    const [showBulkModal, setShowBulkModal] = useState(false);
+    const [bulkStats, setBulkStats] = useState<BulkResetStats | null>(null);
+    const [bulkLoadingStats, setBulkLoadingStats] = useState(false);
+    const [bulkPhrase, setBulkPhrase] = useState('');
+    const [bulkReason, setBulkReason] = useState('');
+    const [bulkSubmitting, setBulkSubmitting] = useState(false);
+    const [bulkActionMsg, setBulkActionMsg] = useState<{ type: 'success' | 'error'; text: string; details?: any } | null>(null);
 
     /* — Audit Log State — */
     const [auditLogs, setAuditLogs] = useState<AuditEntry[]>([]);
@@ -196,6 +210,18 @@ export default function AdminGamificationPage() {
         loadStudentHistory(s._id);
     };
 
+    /* ─── Quick Trigger Reset For A Student ─── */
+    const handleQuickResetStudent = (s: Student) => {
+        setSelected(s);
+        setActionMsg(null);
+        setDeductAmount('');
+        setDeductReason('');
+        setResetReason('تصفير إداري لرصيد النقاط');
+        setOperationType('reset');
+        setShowConfirmModal(true);
+        loadStudentHistory(s._id);
+    };
+
     /* ─── Search ─── */
     const handleSearch = (q: string) => {
         setSearch(q);
@@ -204,7 +230,7 @@ export default function AdminGamificationPage() {
         loadStudents(q);
     };
 
-    /* ─── Validation ─── */
+    /* ─── Single Student Validation ─── */
     const parsedDeductAmount = parseInt(deductAmount, 10);
     const canDeduct =
         selected &&
@@ -218,7 +244,7 @@ export default function AdminGamificationPage() {
         (selected.points || 0) > 0 &&
         resetReason.trim().length >= 3;
 
-    /* ─── Execute Deduction or Reset ─── */
+    /* ─── Execute Deduction or Reset for Single Student ─── */
     const handleExecuteOperation = async () => {
         if (!selected) return;
 
@@ -276,6 +302,82 @@ export default function AdminGamificationPage() {
         }
     };
 
+    /* ─── Bulk Reset Handlers ─── */
+    const handleOpenBulkModal = async () => {
+        setBulkPhrase('');
+        setBulkReason('');
+        setBulkActionMsg(null);
+        setShowBulkModal(true);
+        setBulkLoadingStats(true);
+        try {
+            const res = await fetch('/api/admin/points/reset-all');
+            const json = await res.json();
+            if (json.success) {
+                setBulkStats(json.data);
+            }
+        } catch {
+            setBulkStats(null);
+        } finally {
+            setBulkLoadingStats(false);
+        }
+    };
+
+    const isBulkPhraseCorrect = bulkPhrase.trim() === 'تصفير جميع النقاط';
+    const canSubmitBulk = isBulkPhraseCorrect && bulkReason.trim().length >= 3 && !bulkSubmitting;
+
+    const handleExecuteBulkReset = async () => {
+        if (!canSubmitBulk) return;
+
+        setBulkSubmitting(true);
+        setBulkActionMsg(null);
+
+        try {
+            const res = await fetch('/api/admin/points/reset-all', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    confirmationPhrase: bulkPhrase.trim(),
+                    reason: bulkReason.trim(),
+                    requestId: generateRequestId(),
+                }),
+            });
+
+            const json = await res.json();
+
+            if (json.success) {
+                setBulkActionMsg({
+                    type: 'success',
+                    text: json.message || 'تم تصفير نقاط جميع الطلاب بنجاح',
+                    details: json.data,
+                });
+
+                // Update student points in memory to 0
+                setStudents((prev) => prev.map((s) => ({ ...s, points: 0 })));
+                if (selected) {
+                    setSelected((prev) => (prev ? { ...prev, points: 0 } : null));
+                    await loadStudentHistory(selected._id);
+                }
+
+                // Refresh overview stats and audit logs
+                loadOverview();
+                loadAudit(1);
+            } else {
+                setBulkActionMsg({
+                    type: 'error',
+                    text: json.message || 'فشلت عملية التصفير الشامل',
+                    details: json.data,
+                });
+            }
+        } catch {
+            setBulkActionMsg({
+                type: 'error',
+                text: 'حدث خطأ في الاتصال بالخادم أثناء تنفيذ التصفير الشامل',
+            });
+        } finally {
+            setBulkSubmitting(false);
+        }
+    };
+
     const TABS = [
         { key: 'overview', label: '📊 ملخص النقاط' },
         { key: 'manage', label: '📉 إدارة وخصم النقاط' },
@@ -284,14 +386,26 @@ export default function AdminGamificationPage() {
 
     return (
         <div className="space-y-6" dir="rtl">
-            <div>
-                <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-                    <span>🪙</span>
-                    <span>إدارة النقاط والتدقيق</span>
-                </h1>
-                <p className="text-gray-500 text-sm mt-1">
-                    متابعة أرصدة الطلاب، خصم وتصفير النقاط بأمان، واستعراض سجل التدقيق الموثق
-                </p>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                    <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+                        <span>🪙</span>
+                        <span>إدارة النقاط والتدقيق</span>
+                    </h1>
+                    <p className="text-gray-500 text-sm mt-1">
+                        متابعة أرصدة الطلاب، خصم وتصفير النقاط بأمان، واستعراض سجل التدقيق الموثق
+                    </p>
+                </div>
+
+                {/* Bulk Reset Quick Access Button */}
+                <button
+                    type="button"
+                    onClick={handleOpenBulkModal}
+                    className="px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-2xl text-xs font-black transition-colors shadow-sm flex items-center gap-2 self-start sm:self-auto"
+                >
+                    <span>🔄</span>
+                    <span>تصفير نقاط جميع الطلاب</span>
+                </button>
             </div>
 
             {/* Tab Switcher */}
@@ -371,11 +485,23 @@ export default function AdminGamificationPage() {
                                                         {gradeLabel(s.grade) || '—'} • المعرف: {s._id}
                                                     </div>
                                                 </div>
-                                                <div className="text-left">
-                                                    <div className="font-black text-forest text-base">
-                                                        {s.points?.toLocaleString()}
+                                                <div className="text-left flex items-center gap-3">
+                                                    <div>
+                                                        <div className="font-black text-forest text-base">
+                                                            {s.points?.toLocaleString()}
+                                                        </div>
+                                                        <div className="text-xs text-gray-400">نقطة</div>
                                                     </div>
-                                                    <div className="text-xs text-gray-400">نقطة</div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setTab('manage');
+                                                            handleSelectStudent(s);
+                                                        }}
+                                                        className="text-xs px-2.5 py-1 rounded-xl bg-gray-100 hover:bg-forest/10 hover:text-forest text-gray-700 font-bold transition-colors"
+                                                    >
+                                                        إدارة
+                                                    </button>
                                                 </div>
                                             </div>
                                         ))}
@@ -440,6 +566,29 @@ export default function AdminGamificationPage() {
             {/* ─── TAB 2: MANAGE & DEDUCT POINTS ─── */}
             {tab === 'manage' && (
                 <div className="space-y-6">
+                    {/* Bulk Reset Callout Card */}
+                    <div className="bg-gradient-to-r from-red-50 to-orange-50 border-2 border-red-200 rounded-3xl p-5 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                        <div className="flex items-start gap-3">
+                            <span className="text-3xl flex-shrink-0">🔄</span>
+                            <div>
+                                <h3 className="text-base font-black text-red-900">
+                                    تصفير نقاط جميع الطلاب دفعة واحدة
+                                </h3>
+                                <p className="text-xs text-red-700 mt-1 leading-relaxed max-w-xl">
+                                    إجراء إداري رسمي يصفّر أرصدة النقاط الحالية لجميع الطلاب المستهدفين (الذين لديهم رصيد أكبر من صفر)، مع الحفاظ التام على حسابات الطلاب واشتراكاتهم وسجلاتهم التاريخية وتوثيق كل حركة.
+                                </p>
+                            </div>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={handleOpenBulkModal}
+                            className="px-5 py-2.5 bg-red-700 hover:bg-red-800 text-white rounded-xl text-xs font-black transition-all shadow-md shrink-0 flex items-center gap-2"
+                        >
+                            <span>⚠️</span>
+                            <span>تصفير نقاط جميع الطلاب</span>
+                        </button>
+                    </div>
+
                     {/* Notice */}
                     <div className="bg-amber-50 border border-amber-200 rounded-3xl p-4 text-sm text-amber-900 flex gap-3 shadow-xs">
                         <span className="text-2xl flex-shrink-0">⚠️</span>
@@ -480,17 +629,19 @@ export default function AdminGamificationPage() {
                                     </div>
                                 ) : (
                                     students.map((s) => (
-                                        <button
+                                        <div
                                             key={s._id}
-                                            type="button"
-                                            onClick={() => handleSelectStudent(s)}
-                                            className={`w-full text-right p-3 rounded-2xl text-sm transition-all flex items-center justify-between gap-3 ${
+                                            className={`w-full p-3 rounded-2xl text-sm transition-all flex items-center justify-between gap-3 ${
                                                 selected?._id === s._id
                                                     ? 'bg-forest/10 border-2 border-forest text-forest'
                                                     : 'hover:bg-gray-50 border-2 border-transparent text-gray-700'
                                             }`}
                                         >
-                                            <div className="truncate">
+                                            <button
+                                                type="button"
+                                                onClick={() => handleSelectStudent(s)}
+                                                className="text-right flex-1 truncate"
+                                            >
                                                 <div className="font-bold truncate">{s.name}</div>
                                                 <div className="text-xs text-gray-400">
                                                     {s.phone} • {gradeLabel(s.grade) || 'طالب'}
@@ -498,14 +649,26 @@ export default function AdminGamificationPage() {
                                                 <div className="text-[10px] text-gray-400 font-mono">
                                                     ID: {s._id}
                                                 </div>
-                                            </div>
-                                            <div className="text-left shrink-0">
-                                                <div className="font-black text-forest">
-                                                    {(s.points || 0).toLocaleString()}
+                                            </button>
+                                            <div className="text-left shrink-0 flex items-center gap-2">
+                                                <div>
+                                                    <div className="font-black text-forest">
+                                                        {(s.points || 0).toLocaleString()}
+                                                    </div>
+                                                    <div className="text-[10px] text-gray-400">نقطة</div>
                                                 </div>
-                                                <div className="text-[10px] text-gray-400">نقطة</div>
+                                                {s.points > 0 && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleQuickResetStudent(s)}
+                                                        title="تصفير نقاط هذا الطالب"
+                                                        className="px-2 py-1 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded-lg text-xs font-bold transition-colors"
+                                                    >
+                                                        🔄 تصفير
+                                                    </button>
+                                                )}
                                             </div>
-                                        </button>
+                                        </div>
                                     ))
                                 )}
                             </div>
@@ -758,7 +921,7 @@ export default function AdminGamificationPage() {
                                 <span>سجل تدقيق عمليات الخصم والتصفير</span>
                             </h2>
                             <p className="text-xs text-gray-400 mt-0.5">
-                                سجل موثق غير قابل للتعديل أو الحذف يعرض جميع عمليات الخصم والتصفير
+                                سجل موثق غير قابل للتعديل أو الحذف يعرض جميع عمليات الخصم والتصفير الفردية والجماعية
                             </p>
                         </div>
                         <button
@@ -791,7 +954,7 @@ export default function AdminGamificationPage() {
                                     <thead>
                                         <tr className="bg-gray-50/80 text-gray-500 text-xs font-bold">
                                             <th className="px-5 py-3.5 text-right">نوع العملية</th>
-                                            <th className="px-5 py-3.5 text-right">الطالب</th>
+                                            <th className="px-5 py-3.5 text-right">الطالب / المستهدف</th>
                                             <th className="px-5 py-3.5 text-center">الرصيد قبل</th>
                                             <th className="px-5 py-3.5 text-center">الخصم</th>
                                             <th className="px-5 py-3.5 text-center">الرصيد بعد</th>
@@ -803,19 +966,24 @@ export default function AdminGamificationPage() {
                                     <tbody className="divide-y divide-gray-100">
                                         {auditLogs.map((log) => {
                                             const isReset = log.operationType === 'reset';
+                                            const isBulk = log.operationType === 'bulk_reset';
                                             return (
                                                 <tr key={log.id} className="hover:bg-gray-50/50 transition-colors">
                                                     {/* Operation Type Badge */}
                                                     <td className="px-5 py-4">
                                                         <span
                                                             className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-black ${
-                                                                isReset
+                                                                isBulk
+                                                                    ? 'bg-purple-100 text-purple-800 border border-purple-200'
+                                                                    : isReset
                                                                     ? 'bg-red-100 text-red-800 border border-red-200'
                                                                     : 'bg-rose-50 text-rose-700 border border-rose-200'
                                                             }`}
                                                         >
-                                                            <span>{isReset ? '🔄' : '📉'}</span>
-                                                            <span>{isReset ? 'تصفير كامل' : 'خصم جزئي'}</span>
+                                                            <span>{isBulk ? '⚡' : isReset ? '🔄' : '📉'}</span>
+                                                            <span>
+                                                                {isBulk ? 'تصفير شامل' : isReset ? 'تصفير كامل' : 'خصم جزئي'}
+                                                            </span>
                                                         </span>
                                                     </td>
 
@@ -901,7 +1069,7 @@ export default function AdminGamificationPage() {
                 </div>
             )}
 
-            {/* ─── CONFIRMATION MODAL ─── */}
+            {/* ─── SINGLE STUDENT CONFIRMATION MODAL ─── */}
             {showConfirmModal && selected && (
                 <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
                     <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 animate-scaleUp">
@@ -1001,6 +1169,162 @@ export default function AdminGamificationPage() {
                                     </span>
                                 )}
                             </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ─── BULK RESET CONFIRMATION MODAL ─── */}
+            {showBulkModal && (
+                <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
+                    <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-7 shadow-2xl space-y-5 animate-scaleUp max-h-[90vh] overflow-y-auto">
+                        <div className="w-16 h-16 rounded-3xl bg-red-100 text-red-700 flex items-center justify-center text-3xl mx-auto shadow-inner">
+                            ⚠️
+                        </div>
+
+                        <div className="text-center">
+                            <h3 className="text-2xl font-black text-gray-900">
+                                تصفير نقاط جميع الطلاب
+                            </h3>
+                            <p className="text-xs text-red-600 font-bold mt-1">
+                                تنبيه: هذا الإجراء سيصفّر أرصدة النقاط الحالية لجميع الطلاب المستهدفين
+                            </p>
+                        </div>
+
+                        {/* Stats Banner */}
+                        <div className="bg-red-50/70 border border-red-200 rounded-2xl p-4">
+                            {bulkLoadingStats ? (
+                                <div className="text-center py-2 text-xs text-red-600 font-bold flex items-center justify-center gap-2">
+                                    <span className="w-4 h-4 border-2 border-red-600 border-t-transparent rounded-full animate-spin" />
+                                    <span>جاري فحص عدد الطلاب المتأثرين...</span>
+                                </div>
+                            ) : bulkStats ? (
+                                <div className="grid grid-cols-2 gap-3 text-center">
+                                    <div className="bg-white p-3 rounded-xl border border-red-100">
+                                        <div className="text-2xl font-black text-red-700">
+                                            {bulkStats.affectedStudentsCount.toLocaleString()}
+                                        </div>
+                                        <div className="text-xs text-gray-500 font-bold mt-0.5">
+                                            طالب متأثر (رصيدهم &gt; 0)
+                                        </div>
+                                    </div>
+                                    <div className="bg-white p-3 rounded-xl border border-red-100">
+                                        <div className="text-2xl font-black text-red-700">
+                                            {bulkStats.totalPointsToReset.toLocaleString()}
+                                        </div>
+                                        <div className="text-xs text-gray-500 font-bold mt-0.5">
+                                            إجمالي النقاط المراد تصفيرها
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="text-center text-xs text-red-600">
+                                    تعذر تحميل الإحصائيات الفورية
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Safety Notice */}
+                        <div className="bg-gray-50 rounded-2xl p-3.5 text-xs text-gray-600 space-y-1 leading-relaxed border border-gray-100">
+                            <div className="font-bold text-gray-800">🛡️ ضمانات الأمان وسجل النقاط:</div>
+                            <div>• لن يتم حذف أي حساب، أو اشتراك، أو إنجاز، أو سجل حضور.</div>
+                            <div>• يتم الحفاظ على السجلات التاريخية مع إضافة معاملة تصحيحية موثقة لكل طالب.</div>
+                            <div>• يتم توثيق العملية بالكامل في سجل التدقيق الإداري.</div>
+                        </div>
+
+                        {/* Action Message / Result */}
+                        {bulkActionMsg && (
+                            <div
+                                className={`p-4 rounded-2xl text-xs font-bold space-y-1.5 ${
+                                    bulkActionMsg.type === 'success'
+                                        ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                                        : 'bg-red-50 text-red-800 border border-red-200'
+                                }`}
+                            >
+                                <div className="flex items-center gap-2 text-sm font-black">
+                                    <span>{bulkActionMsg.type === 'success' ? '✅' : '❌'}</span>
+                                    <span>{bulkActionMsg.text}</span>
+                                </div>
+                                {bulkActionMsg.details && (
+                                    <div className="text-[11px] font-normal text-gray-600 pt-1">
+                                        عدد الطلاب المعالجين: <strong>{bulkActionMsg.details.affectedCount}</strong> • الحالات المتعثرة: <strong>{bulkActionMsg.details.failedCount}</strong>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Form Inputs (hidden if success) */}
+                        {bulkActionMsg?.type !== 'success' && (
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-800 mb-1">
+                                        سبب التصفير الشامل (مطلوب) <span className="text-red-500">*</span>
+                                    </label>
+                                    <textarea
+                                        rows={2}
+                                        placeholder="مثال: بدء الفصل الدراسي الثاني / تجديد الموسم..."
+                                        value={bulkReason}
+                                        onChange={(e) => setBulkReason(e.target.value)}
+                                        className="w-full border border-gray-300 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-red-500/30 resize-none"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-800 mb-1">
+                                        لتأكيد التصفير، اكتب العبارة التالية نصاً:{' '}
+                                        <code className="text-red-700 bg-red-100 px-1.5 py-0.5 rounded font-black">
+                                            تصفير جميع النقاط
+                                        </code>{' '}
+                                        <span className="text-red-500">*</span>
+                                    </label>
+                                    <input
+                                        type="text"
+                                        placeholder="اكتب: تصفير جميع النقاط"
+                                        value={bulkPhrase}
+                                        onChange={(e) => setBulkPhrase(e.target.value)}
+                                        className={`w-full border rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 transition-all ${
+                                            isBulkPhraseCorrect
+                                                ? 'border-emerald-500 ring-2 ring-emerald-500/20 bg-emerald-50/30 font-bold text-emerald-900'
+                                                : 'border-gray-300 focus:ring-red-500/30'
+                                        }`}
+                                    />
+                                    {bulkPhrase && !isBulkPhraseCorrect && (
+                                        <p className="text-[11px] text-red-600 font-bold mt-1">
+                                            ❌ العبارة المدخلة غير مطابقة
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Action Buttons */}
+                        <div className="flex items-center gap-3 pt-2">
+                            <button
+                                type="button"
+                                onClick={() => setShowBulkModal(false)}
+                                disabled={bulkSubmitting}
+                                className="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-bold transition-colors"
+                            >
+                                {bulkActionMsg?.type === 'success' ? 'إغلاق' : 'إلغاء'}
+                            </button>
+
+                            {bulkActionMsg?.type !== 'success' && (
+                                <button
+                                    type="button"
+                                    onClick={handleExecuteBulkReset}
+                                    disabled={!canSubmitBulk || (bulkStats?.affectedStudentsCount === 0)}
+                                    className="flex-1 py-2.5 bg-red-700 hover:bg-red-800 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl text-xs font-black transition-all shadow-md flex items-center justify-center gap-2"
+                                >
+                                    {bulkSubmitting ? (
+                                        <>
+                                            <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                            <span>جاري التصفير الشامل...</span>
+                                        </>
+                                    ) : (
+                                        <span>تأكيد التصفير الشامل لجميع الطلاب 🔄</span>
+                                    )}
+                                </button>
+                            )}
                         </div>
                     </div>
                 </div>

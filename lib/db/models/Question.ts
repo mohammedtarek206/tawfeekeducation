@@ -44,6 +44,7 @@ const QuestionSchema = new Schema<IQuestion>(
         text: { type: String, required: true, trim: true },
         type: { type: String, enum: ['mcq', 'true_false', 'essay'], required: true },
         choices: { type: [ChoiceSchema], default: [] },
+        correctAnswer: { type: String, trim: true },
         explanation: { type: String, trim: true },
         modelAnswer: { type: String, trim: true },
         gradingCriteria: { type: String, trim: true },

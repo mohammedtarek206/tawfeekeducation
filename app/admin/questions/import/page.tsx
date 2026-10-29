@@ -165,15 +165,31 @@ function QuestionImportContent() {
                 });
             }
 
-            const json = await res.json();
-            if (!res.ok || !json.success) {
-                setError(json.message || 'فشل في تحليل الأسئلة');
+            let json: any = null;
+            try {
+                json = await res.json();
+            } catch {
+                throw new Error(`استجابة غير صالحة من الخادم (رمز الحالة: ${res.status} ${res.statusText})`);
+            }
+
+            if (!res.ok || !json?.success) {
+                setError(json?.message || `فشل في تحليل الأسئلة (رمز: ${res.status})`);
                 return;
             }
 
-            const parsedList: ParsedQuestion[] = json.data.preview;
+            const parsedList: ParsedQuestion[] = json?.data?.preview || [];
+            if (!Array.isArray(parsedList) || parsedList.length === 0) {
+                setError('لم يتم العثور على أي أسئلة صالحة في النص المدخل');
+                return;
+            }
+
             setPreview(parsedList);
-            setStats(json.data.stats);
+            setStats(json.data.stats || {
+                total: parsedList.length,
+                valid: parsedList.filter((q) => q.valid).length,
+                invalid: parsedList.filter((q) => !q.valid).length,
+                duplicates: parsedList.filter((q) => q.isDuplicate).length,
+            });
 
             // Automatically skip invalid or duplicate items initially
             setSkipped(
@@ -184,8 +200,9 @@ function QuestionImportContent() {
                 )
             );
             setStep('preview');
-        } catch {
-            setError('حدث خطأ في الاتصال بالخادم أثناء تحليل الأسئلة');
+        } catch (err: any) {
+            console.error('Question parse client error:', err);
+            setError(err?.message || 'حدث خطأ في الاتصال بالخادم أثناء تحليل الأسئلة');
         } finally {
             setLoading(false);
         }
@@ -215,7 +232,9 @@ function QuestionImportContent() {
                     isValid = false;
                     errMsg = 'نص السؤال قصير جداً أو مفقود';
                 } else if (updated.type === 'essay') {
-                    isValid = true;
+                    const ans = (updated.modelAnswer || updated.correctAnswer || updated.answer || '').trim();
+                    isValid = Boolean(ans);
+                    if (!isValid) errMsg = 'السؤال غير مكتمل (يرجى كتابة الإجابة النموذجية)';
                 } else if (updated.type === 'true_false') {
                     const ans = (updated.correctAnswer || '').trim();
                     isValid = ans === 'صح' || ans === 'خطأ';
@@ -265,6 +284,7 @@ function QuestionImportContent() {
 
     // Import Execution
     const handleImport = async () => {
+        if (loading) return;
         setError('');
         if (targetType === 'bank') {
             if (!grade) { setError('يرجى اختيار الصف الدراسي للأسئلة'); return; }
@@ -276,6 +296,12 @@ function QuestionImportContent() {
         const toImport = preview.filter((q) => !skipped.has(q.index));
         if (toImport.length === 0) {
             setError('لم يتم تحديد أي أسئلة صالحة للاستيراد');
+            return;
+        }
+
+        const invalidSelected = toImport.filter((q) => !q.valid);
+        if (invalidSelected.length > 0) {
+            setError(`يوجد ${invalidSelected.length} سؤال غير مكتمل أو غير صالح محدد للاستيراد. يرجى تصحيحه أو إلغاء تحديده أولاً.`);
             return;
         }
 
@@ -294,16 +320,22 @@ function QuestionImportContent() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
             });
-            const json = await res.json();
-            if (!res.ok || !json.success) {
-                setError(json.message || 'حدث خطأ أثناء استيراد الأسئلة');
+            let json: any = null;
+            try {
+                json = await res.json();
+            } catch {
+                throw new Error(`استجابة غير صالحة من الخادم أثناء الحفظ (رمز: ${res.status})`);
+            }
+            if (!res.ok || !json?.success) {
+                setError(json?.message || 'حدث خطأ أثناء استيراد الأسئلة');
                 return;
             }
 
             setImportResult(json.data);
             setStep('done');
-        } catch {
-            setError('حدث خطأ في الاتصال بالخادم أثناء حفظ الأسئلة');
+        } catch (err: any) {
+            console.error('Question import client error:', err);
+            setError(err?.message || 'حدث خطأ في الاتصال بالخادم أثناء حفظ الأسئلة');
         } finally {
             setLoading(false);
         }
@@ -586,7 +618,7 @@ function QuestionImportContent() {
                         <div className="space-y-3">
                             <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-xs text-amber-800 space-y-1">
                                 <div className="font-bold">⚠️ تنبيه بشأن صلاحيات ملف Google Drive:</div>
-                                <div>تأكد أن إعدادات المشاركة للملف مضبوطة على "أي شخص لديه الرابط" (Anyone with the link).</div>
+                                <div>تأكد أن إعدادات المشاركة للملف مضبوطة على «أي شخص لديه الرابط» (Anyone with the link).</div>
                                 <div>يدعم مستندات Google Docs وملفات PDF و TXT.</div>
                             </div>
                             <label className="block text-sm font-bold text-gray-700">رابط ملف Google Drive *</label>
@@ -888,8 +920,8 @@ function QuestionImportContent() {
                                                         </label>
                                                         <textarea
                                                             rows={2}
-                                                            value={q.modelAnswer || ''}
-                                                            onChange={(e) => updateQuestion(q.index, { modelAnswer: e.target.value })}
+                                                            value={q.modelAnswer || q.correctAnswer || q.answer || ''}
+                                                            onChange={(e) => updateQuestion(q.index, { modelAnswer: e.target.value, correctAnswer: e.target.value, answer: e.target.value })}
                                                             className="w-full text-xs border border-purple-200 rounded-lg p-2 bg-white"
                                                             placeholder="اكتب الإجابة النموذجية..."
                                                         />
