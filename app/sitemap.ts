@@ -59,6 +59,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
             changeFrequency: 'monthly',
             priority: 0.4,
         },
+        {
+            // لوحة الشرف العامة — قابلة للفهرسة بـ Google
+            url: `${siteUrl}/leaderboard`,
+            lastModified: now,
+            changeFrequency: 'hourly',
+            priority: 0.8,
+        },
     ];
 
     // ─── Dynamic Lesson Pages (only published & showOnHomepage) ──────────────

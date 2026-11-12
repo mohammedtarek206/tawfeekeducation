@@ -68,6 +68,14 @@ export const metadata: Metadata = {
     alternates: {
         canonical: SITE_URL,
     },
+    // ─── Google Search Console Verification ──────────────────────────────────
+    // أضف قيمة GOOGLE_SITE_VERIFICATION في إعدادات Environment Variables على Vercel
+    // Dashboard → Your Project → Settings → Environment Variables
+    // Key: GOOGLE_SITE_VERIFICATION
+    // Value: القيمة التي تجدها في Google Search Console عند إضافة الموقع
+    ...(process.env.GOOGLE_SITE_VERIFICATION
+        ? { verification: { google: process.env.GOOGLE_SITE_VERIFICATION } }
+        : {}),
 };
 
 // ─── Root Layout ──────────────────────────────────────────────────────────────
