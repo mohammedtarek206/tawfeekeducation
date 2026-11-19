@@ -10,6 +10,14 @@ export interface ILessonProgress extends Document {
     pointsAwarded: boolean;
     watchSessions: number;
     totalWatchTime: number;
+    /**
+     * Watched segments stored as [startSeconds, endSeconds] pairs.
+     * Used to calculate true watched percentage without double-counting.
+     * Example: [[0, 60], [120, 300]] means 0-60s and 120-300s were watched.
+     */
+    watchedSegments: Array<[number, number]>;
+    /** Total unique seconds watched (computed from merged segments) */
+    uniqueSecondsWatched: number;
     createdAt: Date;
     updatedAt: Date;
 }
@@ -25,6 +33,8 @@ const LessonProgressSchema = new Schema<ILessonProgress>(
         pointsAwarded: { type: Boolean, default: false },
         watchSessions: { type: Number, default: 0 },
         totalWatchTime: { type: Number, default: 0 },
+        watchedSegments: { type: [[Number]], default: [] },
+        uniqueSecondsWatched: { type: Number, default: 0 },
     },
     { timestamps: true }
 );

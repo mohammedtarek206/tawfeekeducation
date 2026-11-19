@@ -26,6 +26,8 @@ interface VideoPlayerProps {
     initialProgress?: number;
     /** Callback when video reaches completion threshold */
     onCompleted?: (percentage: number) => void;
+    /** Callback when watched percentage changes */
+    onProgressUpdate?: (percentage: number) => void;
 }
 
 const WATERMARK_POSITIONS = [
@@ -37,10 +39,12 @@ const WATERMARK_POSITIONS = [
     'top-1/2 right-6 -translate-y-1/2',
 ];
 
-// How often to save progress to server (ms)
-const SAVE_INTERVAL_MS = 15_000;
-// Completion threshold
-const COMPLETION_THRESHOLD = 90;
+/** Interval at which heartbeats are sent to the server (ms) */
+const HEARTBEAT_INTERVAL_MS = 5_000;
+/** Minimum watched % to show progress bar */
+const SHOW_PROGRESS_THRESHOLD = 1;
+/** Required % for completion */
+const COMPLETION_REQUIRED_PCT = 50;
 
 // Build the watermark text from fields setting
 function buildWatermarkText(
@@ -66,6 +70,28 @@ function ytCommand(iframe: HTMLIFrameElement | null, func: string, args: unknown
     );
 }
 
+/**
+ * Merge overlapping segments. Each segment is [startSec, endSec].
+ */
+function mergeSegments(segments: Array<[number, number]>): Array<[number, number]> {
+    if (!segments.length) return [];
+    const sorted = [...segments].sort((a, b) => a[0] - b[0]);
+    const merged: Array<[number, number]> = [sorted[0]];
+    for (let i = 1; i < sorted.length; i++) {
+        const last = merged[merged.length - 1];
+        if (sorted[i][0] <= last[1] + 1) {
+            last[1] = Math.max(last[1], sorted[i][1]);
+        } else {
+            merged.push(sorted[i]);
+        }
+    }
+    return merged;
+}
+
+function sumSegments(segments: Array<[number, number]>): number {
+    return segments.reduce((sum, [s, e]) => sum + Math.max(0, e - s), 0);
+}
+
 export default function VideoPlayer({
     src,
     youtubeId,
@@ -81,41 +107,39 @@ export default function VideoPlayer({
     lessonId,
     initialProgress = 0,
     onCompleted,
+    onProgressUpdate,
 }: VideoPlayerProps) {
     const containerRef = useRef<HTMLDivElement>(null);
     const iframeRef = useRef<HTMLIFrameElement>(null);
     const videoRef = useRef<HTMLVideoElement>(null);
     const saveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-    const lastSavedPctRef = useRef<number>(initialProgress);
     const completedFiredRef = useRef(false);
-    // Track if getDisplayMedia interception is in place
     const originalGetDisplayMediaRef = useRef<typeof navigator.mediaDevices.getDisplayMedia | null>(null);
+
+    // ── Segment tracking refs (mutable, not causing re-render) ────────────────
+    /** All watched segments accumulated this session + previous sessions */
+    const watchedSegmentsRef = useRef<Array<[number, number]>>([]);
+    /** Current playing segment start time (null = not playing) */
+    const currentSegmentStartRef = useRef<number | null>(null);
+    /** Last known current time */
+    const lastCurrentTimeRef = useRef<number>(0);
+    /** Last known duration */
+    const videoDurationRef = useRef<number>(0);
+    /** Whether the video is currently playing */
+    const isPlayingRef = useRef<boolean>(false);
+    /** Computed unique watched % */
+    const watchedPctRef = useRef<number>(initialProgress);
 
     const [posIndex, setPosIndex] = useState(0);
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
     const [hasError, setHasError] = useState(false);
+    /** Watched percentage shown in UI (updated periodically) */
     const [watchedPct, setWatchedPct] = useState(initialProgress);
-    const [isCompleted, setIsCompleted] = useState(initialProgress >= COMPLETION_THRESHOLD);
+    const [isCompleted, setIsCompleted] = useState(initialProgress >= COMPLETION_REQUIRED_PCT);
 
-    /**
-     * PROTECTION OVERLAY STATES — documented clearly:
-     *
-     * captureDetected:  TRUE only when browser's getDisplayMedia() was called.
-     *                   This is the ONLY reliable browser-level signal of screen sharing.
-     *                   → Shows full black overlay + pauses video.
-     *
-     * pipDetected:      TRUE when a Document Picture-in-Picture window is opened.
-     *                   This can be used to capture the player outside the normal context.
-     *                   → Shows full black overlay + pauses video.
-     *
-     * tabHidden:        TRUE when the browser tab goes to background (Alt+Tab, minimize).
-     *                   This is NOT proof of screen recording — user may just switch tasks.
-     *                   → Only pauses video silently, does NOT show overlay.
-     */
     const [captureDetected, setCaptureDetected] = useState(false);
     const [pipDetected, setPipDetected] = useState(false);
-    // tabHidden only pauses playback — no overlay shown (not a capture signal)
     const tabHiddenRef = useRef(false);
 
     // Parse video info
@@ -134,14 +158,93 @@ export default function VideoPlayer({
 
     const embedUrl = isYouTube ? ytEmbedUrl : videoInfo.embedUrl;
 
+    // ── Compute watched % from segments ───────────────────────────────────────
+    const computeWatchedPct = useCallback((): number => {
+        const duration = videoDurationRef.current;
+        if (!duration || duration <= 0) return watchedPctRef.current;
+        const segments = watchedSegmentsRef.current;
+        const unique = sumSegments(mergeSegments(segments));
+        const pct = Math.min(100, Math.round((unique / duration) * 100));
+        return pct;
+    }, []);
+
+    // ── Flush current segment into watchedSegments ────────────────────────────
+    const flushCurrentSegment = useCallback((currentTime: number) => {
+        if (currentSegmentStartRef.current !== null) {
+            const segStart = currentSegmentStartRef.current;
+            const segEnd = Math.max(segStart, currentTime);
+            if (segEnd - segStart >= 1) {
+                watchedSegmentsRef.current = mergeSegments([
+                    ...watchedSegmentsRef.current,
+                    [segStart, segEnd],
+                ]);
+            }
+            currentSegmentStartRef.current = null;
+        }
+    }, []);
+
+    // ── Send heartbeat to server ──────────────────────────────────────────────
+    const sendHeartbeat = useCallback(async () => {
+        if (!lessonId || !isPlayingRef.current) return;
+
+        const currentTime = lastCurrentTimeRef.current;
+        const duration = videoDurationRef.current;
+        if (!duration || duration <= 0 || currentSegmentStartRef.current === null) return;
+
+        const segStart = currentSegmentStartRef.current;
+        const segEnd = Math.max(segStart, currentTime);
+
+        // Minimum 2 seconds to send
+        if (segEnd - segStart < 2) return;
+
+        try {
+            const res = await fetch('/api/student/lessons/heartbeat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    lessonId,
+                    segmentStart: segStart,
+                    segmentEnd: segEnd,
+                    duration,
+                }),
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                if (data.success && data.data) {
+                    const serverPct = data.data.watchedPercentage;
+                    watchedPctRef.current = serverPct;
+                    setWatchedPct(serverPct);
+                    onProgressUpdate?.(serverPct);
+
+                    if (serverPct >= COMPLETION_REQUIRED_PCT && !completedFiredRef.current) {
+                        completedFiredRef.current = true;
+                        setIsCompleted(true);
+                        onCompleted?.(serverPct);
+                    }
+                }
+            }
+        } catch {
+            /* silent — will retry on next heartbeat */
+        }
+
+        // Start a new segment from current position
+        currentSegmentStartRef.current = segEnd;
+    }, [lessonId, onCompleted, onProgressUpdate]);
+
     // ── Reset on video change ─────────────────────────────────────────────────
     useEffect(() => {
         setIsLoading(true);
         setHasError(false);
         setWatchedPct(initialProgress);
-        lastSavedPctRef.current = initialProgress;
-        completedFiredRef.current = initialProgress >= COMPLETION_THRESHOLD;
-        setIsCompleted(initialProgress >= COMPLETION_THRESHOLD);
+        watchedPctRef.current = initialProgress;
+        watchedSegmentsRef.current = [];
+        currentSegmentStartRef.current = null;
+        lastCurrentTimeRef.current = 0;
+        videoDurationRef.current = 0;
+        isPlayingRef.current = false;
+        completedFiredRef.current = initialProgress >= COMPLETION_REQUIRED_PCT;
+        setIsCompleted(initialProgress >= COMPLETION_REQUIRED_PCT);
         setCaptureDetected(false);
         setPipDetected(false);
     }, [targetUrl, youtubeId, initialProgress]);
@@ -168,7 +271,6 @@ export default function VideoPlayer({
 
     // ── Helper: log security event to server ──────────────────────────────────
     const logSecurityEvent = useCallback((eventType: 'screen_capture_detected' | 'pip_detected', context?: string) => {
-        // Fire-and-forget — never block the UI
         fetch('/api/student/security-event', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -178,31 +280,13 @@ export default function VideoPlayer({
 
     // ── Helper: pause all media in the player ─────────────────────────────────
     const pauseAllMedia = useCallback(() => {
-        // Pause YouTube via postMessage
         ytCommand(iframeRef.current, 'pauseVideo');
-        // Pause direct video element
         if (videoRef.current && !videoRef.current.paused) {
             videoRef.current.pause();
         }
     }, []);
 
     // ── Anti Screen-Capture: intercept getDisplayMedia ────────────────────────
-    /**
-     * WHAT THIS DOES:
-     *   Wraps the browser's screen-sharing API so we know when the user initiates
-     *   a browser screen-share (e.g., Chrome's "Share tab" / "Share screen").
-     *
-     * WHAT IT CANNOT DO:
-     *   - Stop OBS, hardware capture cards, or OS-level screen recorders
-     *   - Stop mobile cameras pointed at the screen
-     *   - Stop other browsers/processes that don't use the same JS context
-     *
-     * WHAT HAPPENS ON DETECTION:
-     *   - The video is paused immediately
-     *   - A black "protected content" overlay is shown
-     *   - The event is logged server-side (audit log)
-     *   - Once the share stream ends, the overlay is removed and video can resume
-     */
     useEffect(() => {
         if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getDisplayMedia) return;
 
@@ -210,21 +294,14 @@ export default function VideoPlayer({
         originalGetDisplayMediaRef.current = original;
 
         (navigator.mediaDevices as any).getDisplayMedia = async (constraints?: DisplayMediaStreamOptions) => {
-            // 1. Pause media immediately — before the share even starts
             pauseAllMedia();
-            // 2. Show protection overlay
             setCaptureDetected(true);
-            // 3. Log the event to the server (non-blocking)
             logSecurityEvent('screen_capture_detected', 'getDisplayMedia_intercepted');
 
             try {
-                // 4. Let the capture proceed — we cannot block it from JS
                 const stream = await original(constraints);
-
-                // 5. When stream ends (user stops sharing), restore normal state
                 const allTracks = stream.getTracks();
                 const handleTrackEnd = () => {
-                    // Only restore if ALL tracks have ended
                     if (allTracks.every(t => t.readyState === 'ended')) {
                         setCaptureDetected(false);
                     }
@@ -232,17 +309,14 @@ export default function VideoPlayer({
                 allTracks.forEach(track => {
                     track.addEventListener('ended', handleTrackEnd);
                 });
-
                 return stream;
             } catch {
-                // User cancelled or denied — restore immediately
                 setCaptureDetected(false);
                 throw new Error('Screen capture cancelled or denied');
             }
         };
 
         return () => {
-            // Restore original on unmount
             if (originalGetDisplayMediaRef.current) {
                 (navigator.mediaDevices as any).getDisplayMedia = originalGetDisplayMediaRef.current;
             }
@@ -250,15 +324,6 @@ export default function VideoPlayer({
     }, [pauseAllMedia, logSecurityEvent]);
 
     // ── Anti-Capture: Document Picture-in-Picture detection ───────────────────
-    /**
-     * WHAT THIS DOES:
-     *   The Document Picture-in-Picture API (Chrome 116+) allows opening a
-     *   detached window with full DOM, which could be used to capture the player
-     *   outside the usual page context. We detect this and show the protection overlay.
-     *
-     * SUPPORTED: Chrome 116+, Edge 116+ on Desktop
-     * NOT SUPPORTED: Firefox, Safari (no Document PiP API yet)
-     */
     useEffect(() => {
         const pip = (window as any).documentPictureInPicture;
         if (!pip) return;
@@ -268,100 +333,37 @@ export default function VideoPlayer({
             setPipDetected(true);
             logSecurityEvent('pip_detected', 'document_pip_opened');
         };
-
-        const handleLeavePip = () => {
-            setPipDetected(false);
-        };
+        const handleLeavePip = () => { setPipDetected(false); };
 
         pip.addEventListener('enter', handleEnterPip);
+        if (pip.window) pip.window.addEventListener('pagehide', handleLeavePip);
 
-        // Listen for when any pip window closes
-        if (pip.window) {
-            pip.window.addEventListener('pagehide', handleLeavePip);
-        }
-
-        return () => {
-            pip.removeEventListener('enter', handleEnterPip);
-        };
+        return () => { pip.removeEventListener('enter', handleEnterPip); };
     }, [pauseAllMedia, logSecurityEvent]);
 
-    // ── Tab hidden: silently pause (NOT a capture signal — no overlay shown) ──
-    /**
-     * WHY: We pause the video when the tab goes to background as a UX courtesy
-     * and minor deterrent. We do NOT show an overlay or treat this as a capture
-     * event, because the user may simply be switching tasks.
-     *
-     * If you previously triggered a protection overlay on visibilitychange,
-     * this has been intentionally removed: it caused false positives and annoyed
-     * legitimate students while providing no real security benefit.
-     */
+    // ── Tab hidden: silently pause ────────────────────────────────────────────
     useEffect(() => {
         const handleVisibility = () => {
             const hidden = document.visibilityState === 'hidden';
             tabHiddenRef.current = hidden;
             if (hidden) {
+                // Flush current segment before pausing
+                flushCurrentSegment(lastCurrentTimeRef.current);
+                isPlayingRef.current = false;
                 pauseAllMedia();
             }
         };
         document.addEventListener('visibilitychange', handleVisibility);
         return () => document.removeEventListener('visibilitychange', handleVisibility);
-    }, [pauseAllMedia]);
+    }, [pauseAllMedia, flushCurrentSegment]);
 
-    /**
-     * IMPORTANT: window.blur is explicitly NOT used as a capture/security signal.
-     * It fires for too many legitimate reasons (opening DevTools, clicking another
-     * app, etc.) and has no correlation with actual screen recording.
-     *
-     * It is NOT implemented here. The previous implementation that triggered an
-     * overlay on window.blur has been intentionally removed.
-     */
-
-    // True protection overlay: only shown for getDisplayMedia or Document PiP
-    const showProtectionOverlay = captureDetected || pipDetected;
-
-    // ── Save progress to API ──────────────────────────────────────────────────
-    const saveProgress = useCallback(async (pct: number) => {
-        if (!lessonId || pct <= lastSavedPctRef.current) return;
-        lastSavedPctRef.current = pct;
-        try {
-            await fetch('/api/student/lessons/progress', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    lessonId,
-                    watchedPercentage: pct,
-                    lastWatchedPosition: 0, // not available from iframe
-                }),
-            });
-            if (pct >= COMPLETION_THRESHOLD && !completedFiredRef.current) {
-                completedFiredRef.current = true;
-                setIsCompleted(true);
-                onCompleted?.(pct);
-            }
-        } catch {
-            /* silent — will retry next interval */
-        }
-    }, [lessonId, onCompleted]);
-
-    // ── YouTube IFrame API via postMessage ────────────────────────────────────
+    // ── YouTube IFrame API via postMessage — REAL segment tracking ────────────
     useEffect(() => {
         if (!isYouTube || !lessonId) return;
 
-        let duration = 0;
         let isMounted = true;
-
-        // Periodically ask YouTube player for currentTime
-        const pollYT = () => {
-            if (!iframeRef.current?.contentWindow) return;
-            iframeRef.current.contentWindow.postMessage(
-                JSON.stringify({ event: 'command', func: 'getDuration', args: [] }),
-                '*'
-            );
-            iframeRef.current.contentWindow.postMessage(
-                JSON.stringify({ event: 'command', func: 'getCurrentTime', args: [] }),
-                '*'
-            );
-        };
+        let prevTime = 0;
+        let prevPlayerState = -1; // -1 = unstarted
 
         const handleMessage = (e: MessageEvent) => {
             if (!isMounted) return;
@@ -373,16 +375,73 @@ export default function VideoPlayer({
                     d = e.data;
                 }
 
-                // YouTube sends info object
-                if (d?.info) {
-                    const info = d.info;
-                    if (info.duration) duration = info.duration;
-                    const currentTime = info.currentTime ?? info.currentMediaTime;
-                    if (currentTime && duration > 0) {
-                        const pct = Math.min(100, Math.round((currentTime / duration) * 100));
+                // ── YouTube state change ──────────────────────────────────────
+                if (d?.event === 'onStateChange') {
+                    const state = d.info; // 1=playing, 2=paused, 0=ended, -1=unstarted, 3=buffering
+                    prevPlayerState = state;
+
+                    if (state === 1) {
+                        // Started playing — begin new segment
+                        isPlayingRef.current = true;
+                        if (currentSegmentStartRef.current === null) {
+                            currentSegmentStartRef.current = lastCurrentTimeRef.current;
+                        }
+                    } else if (state === 2 || state === 0) {
+                        // Paused or ended — flush current segment
+                        isPlayingRef.current = false;
+                        flushCurrentSegment(lastCurrentTimeRef.current);
+
+                        // Update UI
+                        const pct = computeWatchedPct();
                         setWatchedPct(pct);
+                        onProgressUpdate?.(pct);
+                    } else if (state === 3) {
+                        // Buffering — keep segment open
+                        isPlayingRef.current = false;
                     }
                 }
+
+                // ── YouTube info (currentTime, duration) ──────────────────────
+                if (d?.info) {
+                    const info = d.info;
+                    if (info.duration && info.duration > 0) {
+                        videoDurationRef.current = info.duration;
+                    }
+
+                    const currentTime = info.currentTime ?? info.currentMediaTime;
+                    if (currentTime !== undefined && currentTime !== null) {
+                        const ct = parseFloat(currentTime);
+
+                        // Detect seek: big jump in time (> 5s skip forward or any backward)
+                        const timeDiff = ct - prevTime;
+                        const isSeeked = Math.abs(timeDiff) > 5 || timeDiff < 0;
+
+                        if (isSeeked && isPlayingRef.current) {
+                            // Flush the segment before the seek
+                            flushCurrentSegment(prevTime);
+                            // Start a new segment from the seeked position
+                            currentSegmentStartRef.current = ct;
+                        }
+
+                        lastCurrentTimeRef.current = ct;
+                        prevTime = ct;
+
+                        // If playing, update segment in real-time for UI accuracy
+                        if (isPlayingRef.current && currentSegmentStartRef.current !== null) {
+                            // Compute live % for UI (don't flush — just preview)
+                            const previewSeg: [number, number] = [currentSegmentStartRef.current, ct];
+                            const tempSegments = mergeSegments([...watchedSegmentsRef.current, previewSeg]);
+                            const duration = videoDurationRef.current;
+                            if (duration > 0) {
+                                const unique = sumSegments(tempSegments);
+                                const pct = Math.min(100, Math.round((unique / duration) * 100));
+                                setWatchedPct(pct);
+                                watchedPctRef.current = pct;
+                            }
+                        }
+                    }
+                }
+
             } catch {
                 /* non-JSON messages — ignore */
             }
@@ -390,33 +449,99 @@ export default function VideoPlayer({
 
         window.addEventListener('message', handleMessage);
 
-        // Poll every 5 seconds for currentTime
-        const poller = setInterval(pollYT, 5000);
+        // Poll YouTube for state every 2 seconds
+        const poller = setInterval(() => {
+            if (!iframeRef.current?.contentWindow) return;
+            iframeRef.current.contentWindow.postMessage(
+                JSON.stringify({ event: 'listening' }),
+                '*'
+            );
+        }, 2000);
 
-        // Save to API every SAVE_INTERVAL_MS
+        // Heartbeat timer — sends segment to server every HEARTBEAT_INTERVAL_MS
         saveTimerRef.current = setInterval(() => {
-            setWatchedPct((currentPct) => {
-                saveProgress(currentPct);
-                return currentPct;
-            });
-        }, SAVE_INTERVAL_MS);
+            sendHeartbeat();
+        }, HEARTBEAT_INTERVAL_MS);
 
         return () => {
             isMounted = false;
             window.removeEventListener('message', handleMessage);
             clearInterval(poller);
             if (saveTimerRef.current) clearInterval(saveTimerRef.current);
+            // Flush remaining segment on unmount
+            flushCurrentSegment(lastCurrentTimeRef.current);
         };
-    }, [isYouTube, lessonId, saveProgress]);
+    }, [isYouTube, lessonId, sendHeartbeat, flushCurrentSegment, computeWatchedPct, onProgressUpdate]);
+
+    // ── Direct video element tracking ─────────────────────────────────────────
+    const handleVideoPlay = useCallback(() => {
+        isPlayingRef.current = true;
+        if (currentSegmentStartRef.current === null) {
+            currentSegmentStartRef.current = lastCurrentTimeRef.current;
+        }
+    }, []);
+
+    const handleVideoPause = useCallback(() => {
+        isPlayingRef.current = false;
+        flushCurrentSegment(lastCurrentTimeRef.current);
+        const pct = computeWatchedPct();
+        setWatchedPct(pct);
+        onProgressUpdate?.(pct);
+    }, [flushCurrentSegment, computeWatchedPct, onProgressUpdate]);
+
+    const handleVideoTimeUpdate = useCallback((e: React.SyntheticEvent<HTMLVideoElement>) => {
+        const el = e.currentTarget;
+        if (!el.duration) return;
+        videoDurationRef.current = el.duration;
+
+        const ct = el.currentTime;
+        const timeDiff = ct - lastCurrentTimeRef.current;
+        const isSeeked = Math.abs(timeDiff) > 5 || (timeDiff < 0 && Math.abs(timeDiff) > 0.5);
+
+        if (isSeeked && isPlayingRef.current) {
+            flushCurrentSegment(lastCurrentTimeRef.current);
+            currentSegmentStartRef.current = ct;
+        }
+
+        lastCurrentTimeRef.current = ct;
+
+        // Live UI update
+        if (isPlayingRef.current && currentSegmentStartRef.current !== null) {
+            const previewSeg: [number, number] = [currentSegmentStartRef.current, ct];
+            const tempSegments = mergeSegments([...watchedSegmentsRef.current, previewSeg]);
+            const unique = sumSegments(tempSegments);
+            const pct = Math.min(100, Math.round((unique / el.duration) * 100));
+            setWatchedPct(pct);
+            watchedPctRef.current = pct;
+            onProgressUpdate?.(pct);
+
+            if (pct >= COMPLETION_REQUIRED_PCT && !completedFiredRef.current) {
+                completedFiredRef.current = true;
+                setIsCompleted(true);
+                onCompleted?.(pct);
+            }
+        }
+    }, [flushCurrentSegment, onCompleted, onProgressUpdate]);
+
+    const handleVideoEnded = useCallback((e: React.SyntheticEvent<HTMLVideoElement>) => {
+        isPlayingRef.current = false;
+        flushCurrentSegment(lastCurrentTimeRef.current);
+        const pct = computeWatchedPct();
+        setWatchedPct(pct);
+        onProgressUpdate?.(pct);
+        if (pct >= COMPLETION_REQUIRED_PCT && !completedFiredRef.current) {
+            completedFiredRef.current = true;
+            setIsCompleted(true);
+            onCompleted?.(pct);
+        }
+    }, [flushCurrentSegment, computeWatchedPct, onCompleted, onProgressUpdate]);
 
     // ── Save on unmount ───────────────────────────────────────────────────────
     useEffect(() => {
         return () => {
-            if (lessonId && watchedPct > lastSavedPctRef.current) {
-                saveProgress(watchedPct);
-            }
+            flushCurrentSegment(lastCurrentTimeRef.current);
+            isPlayingRef.current = false;
         };
-        // Only run on unmount
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
@@ -432,6 +557,7 @@ export default function VideoPlayer({
         }
     };
 
+    const showProtectionOverlay = captureDetected || pipDetected;
     const currentPosClass = WATERMARK_POSITIONS[posIndex];
     const watermarkLabel = buildWatermarkText(studentName, watermarkFields, studentIdSuffix, studentGradeLabel);
 
@@ -471,11 +597,13 @@ export default function VideoPlayer({
                     disablePictureInPicture
                     onLoadedData={() => setIsLoading(false)}
                     onError={() => { setIsLoading(false); setHasError(true); }}
-                    onTimeUpdate={(e) => {
-                        const el = e.currentTarget;
-                        if (!el.duration) return;
-                        const pct = Math.min(100, Math.round((el.currentTime / el.duration) * 100));
-                        setWatchedPct(pct);
+                    onPlay={handleVideoPlay}
+                    onPause={handleVideoPause}
+                    onEnded={handleVideoEnded}
+                    onTimeUpdate={handleVideoTimeUpdate}
+                    onSeeked={(e) => {
+                        // Seek handled in onTimeUpdate via big-jump detection
+                        lastCurrentTimeRef.current = e.currentTarget.currentTime;
                     }}
                     className="absolute top-0 left-0 w-full h-full object-contain"
                 />
@@ -492,25 +620,7 @@ export default function VideoPlayer({
                 />
             ) : null}
 
-            {/* ── Anti Screen-Capture Protection Overlay ──────────────────────────
-                WHEN SHOWN: Only when getDisplayMedia() is intercepted (browser screen 
-                share) OR when Document PiP window is detected.
-
-                WHAT IT DOES: Covers the entire video area with an opaque black 
-                overlay. Since the overlay is applied in the DOM over the iframe/video,
-                any browser-based screen recorder capturing this tab/window will see 
-                the overlay instead of video content.
-
-                LIMITATIONS:
-                  • Cannot stop OS-level screen recorders (OBS, Windows Game Bar, etc.)
-                  • Cannot stop external cameras pointed at the screen
-                  • Cannot stop YouTube's own content via external YouTube.com access
-                  • YouTube embed does NOT support DRM — the video stream itself is 
-                    not encrypted at the CDN level for free embeds.
-
-                FOR FULL DRM PROTECTION: Migrate to Cloudflare Stream, Bunny.net, 
-                or Vimeo OTT which support Widevine/FairPlay DRM.
-            ─────────────────────────────────────────────────────────────────── */}
+            {/* Protection Overlay */}
             {showProtectionOverlay && (
                 <div className="absolute inset-0 z-[60] flex flex-col items-center justify-center bg-black">
                     <div className="text-center px-6 select-none">
@@ -534,24 +644,9 @@ export default function VideoPlayer({
                 </div>
             )}
 
-            {/* ── YouTube Click Blockers ─────────────────────────────────────────
-                Transparent overlays (z-25) above the iframe that intercept pointer
-                events before they reach YouTube's external navigation links.
-
-                YouTube overlay zones (when hovering / paused):
-                  TOP: [channel-avatar | video title (→ YT link) | share | settings]
-                  BOTTOM: [▶ seek-bar ────────────── 🔊 ⚙ More-videos | YT-logo]
-
-                Strategy:
-                  • Full-width top strip  → blocks title + share + channel links
-                  • Right side of bottom  → blocks YT logo + settings icon
-                  • Full-width bottom strip → extra safety net for logo area
-            ─────────────────────────────────────────────────────────────────── */}
+            {/* YouTube Click Blockers */}
             {isYouTube && !hasError && embedUrl && (
                 <>
-                    {/* ① FULL-WIDTH top bar — blocks the video title link, channel name,
-                           share button, and all top-bar elements that navigate to YouTube.
-                           Height 15% ≈ ~60px on a 400px-tall player  */}
                     <div
                         aria-hidden="true"
                         className="absolute top-0 left-0 right-0 z-[25]"
@@ -559,9 +654,6 @@ export default function VideoPlayer({
                         onClickCapture={(e) => e.stopPropagation()}
                         onMouseDownCapture={(e) => e.stopPropagation()}
                     />
-
-                    {/* ② RIGHT side of bottom control bar — covers YT logo + settings.
-                           Left portion (play / seek / volume) stays fully usable. */}
                     <div
                         aria-hidden="true"
                         className="absolute bottom-0 right-0 z-[25]"
@@ -569,8 +661,6 @@ export default function VideoPlayer({
                         onClickCapture={(e) => e.stopPropagation()}
                         onMouseDownCapture={(e) => e.stopPropagation()}
                     />
-
-                    {/* ③ FULL-WIDTH thin strip at very bottom — catches logo hover area */}
                     <div
                         aria-hidden="true"
                         className="absolute bottom-0 left-0 right-0 z-[25]"
@@ -581,11 +671,11 @@ export default function VideoPlayer({
                 </>
             )}
 
-            {/* Progress bar (for lesson videos with lessonId) */}
-            {lessonId && watchedPct > 0 && (
+            {/* Progress bar */}
+            {lessonId && watchedPct >= SHOW_PROGRESS_THRESHOLD && (
                 <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/10 z-30 pointer-events-none">
                     <div
-                        className={`h-full transition-all duration-500 ${isCompleted ? 'bg-tawfeek-green' : 'bg-tawfeek-green/70'}`}
+                        className={`h-full transition-all duration-500 ${isCompleted ? 'bg-tawfeek-green' : watchedPct >= COMPLETION_REQUIRED_PCT ? 'bg-tawfeek-green' : 'bg-yellow-400'}`}
                         style={{ width: `${watchedPct}%` }}
                     />
                 </div>
@@ -598,16 +688,14 @@ export default function VideoPlayer({
                 </div>
             )}
 
-            {/* ── Moving Student Watermark ────────────────────────────────────────
-                PURPOSE: Forensic deterrent. If the video is captured by any means,
-                the watermark identifies the student's session.
-                
-                DESIGN:
-                  • Rotates through 6 positions every `watermarkInterval` seconds
-                  • Semi-transparent with backdrop blur for readability
-                  • z-40 (above click blockers, below protection overlay)
-                  • pointer-events-none (never blocks video controls)
-            ─────────────────────────────────────────────────────────────────── */}
+            {/* Watch progress indicator (shown while not completed) */}
+            {lessonId && !isCompleted && watchedPct >= SHOW_PROGRESS_THRESHOLD && (
+                <div className="absolute top-3 left-3 z-30 bg-black/70 text-white text-[10px] font-bold px-2.5 py-1 rounded-full shadow pointer-events-none flex items-center gap-1">
+                    <span>👁</span> {watchedPct}% شُوهد
+                </div>
+            )}
+
+            {/* Moving Student Watermark */}
             {watermarkEnabled && watermarkLabel && (
                 <div
                     className={`absolute ${currentPosClass} transition-all duration-700 z-40 pointer-events-none`}

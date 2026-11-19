@@ -10,6 +10,14 @@ import { updateStreak } from '@/lib/gamification/engine';
 import { checkAndAwardAchievements } from '@/lib/utils/achievements';
 import mongoose from 'mongoose';
 
+/**
+ * POST /api/student/lessons/progress — legacy endpoint kept for backward compat.
+ *
+ * New flow: use /heartbeat for segment tracking + /complete for completion.
+ * This endpoint still works for direct VideoPlayer saves but enforces the
+ * 50% threshold for completion/points (ignores client watchedPercentage for
+ * completion — relies on server-stored progress instead).
+ */
 // POST /api/student/lessons/progress - update video progress
 async function postHandler(req: NextRequest, _ctx: unknown, student: JWTPayload): Promise<NextResponse> {
     await connectDB();
@@ -38,8 +46,10 @@ async function postHandler(req: NextRequest, _ctx: unknown, student: JWTPayload)
     }
 
     const safePercentage = Math.min(100, Math.max(0, parseFloat(watchedPercentage)));
-    const threshold = lesson.completionThreshold || parseInt(process.env.VIDEO_COMPLETION_THRESHOLD || '90');
-    const shouldComplete = safePercentage >= threshold;
+
+    // ── IMPORTANT: completion/points ONLY via /complete endpoint which verifies
+    //   actual watched segments. This endpoint only saves raw progress.
+    // ─────────────────────────────────────────────────────────────────────────
 
     // Find or create progress
     const existing = await LessonProgress.findOne({
@@ -55,8 +65,7 @@ async function postHandler(req: NextRequest, _ctx: unknown, student: JWTPayload)
             lesson: lessonId,
             watchedPercentage: safePercentage,
             lastWatchedPosition: lastWatchedPosition || 0,
-            isCompleted: shouldComplete,
-            completedAt: shouldComplete ? new Date() : undefined,
+            isCompleted: false,
             pointsAwarded: false,
             watchSessions: 1,
         });
@@ -67,63 +76,28 @@ async function postHandler(req: NextRequest, _ctx: unknown, student: JWTPayload)
             $inc: { watchSessions: 1 },
         };
 
-        if (shouldComplete && !existing.isCompleted) {
-            updateData.isCompleted = true;
-            updateData.completedAt = new Date();
-        }
-
         await LessonProgress.findByIdAndUpdate(existing._id, updateData);
     }
 
-    // Award completion points (only once)
-    let pointsResult = null;
-    if (shouldComplete && !pointsAwarded) {
-        const watchPoints = parseInt(process.env.DEFAULT_LESSON_COMPLETE_POINTS || '10');
-
-        const result = await awardPoints({
+    // Award watch start points (one time, for starting to watch)
+    if (safePercentage > 5 && !existing?.pointsAwarded && !existing) {
+        const watchStartPoints = parseInt(process.env.DEFAULT_LESSON_WATCH_POINTS || '5');
+        await awardPoints({
             studentId: student.userId,
-            amount: watchPoints,
-            type: 'lesson_completed',
-            reason: 'إكمال الحصة',
+            amount: watchStartPoints,
+            type: 'lesson_watch',
+            reason: 'مشاهدة الحصة',
             referenceId: lessonId,
             referenceType: 'Lesson',
         });
-
-        if (result.success) {
-            await LessonProgress.findOneAndUpdate(
-                { student: student.userId, lesson: lessonId },
-                { pointsAwarded: true }
-            );
-            pointsAwarded = true;
-            pointsResult = result;
-        }
-
-        // Update streak
-        await updateStreak(student.userId);
-        // Check achievements (lessons, streak, points)
-        checkAndAwardAchievements(student.userId).catch(() => { });
-    } else if (safePercentage > 5 && !existing?.pointsAwarded) {
-        // Award watch start points (one time)
-        const watchStartPoints = parseInt(process.env.DEFAULT_LESSON_WATCH_POINTS || '5');
-        if (!existing) {
-            await awardPoints({
-                studentId: student.userId,
-                amount: watchStartPoints,
-                type: 'lesson_watch',
-                reason: 'مشاهدة الحصة',
-                referenceId: lessonId,
-                referenceType: 'Lesson',
-            });
-        }
     }
 
     return NextResponse.json({
         success: true,
         data: {
-            isCompleted: shouldComplete,
+            isCompleted: existing?.isCompleted || false,
             watchedPercentage: safePercentage,
             pointsAwarded,
-            pointsResult,
         },
     });
 }

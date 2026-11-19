@@ -3,16 +3,20 @@
  * All grade values, labels, slugs, and helpers are defined here.
  * Import this everywhere instead of using hardcoded strings.
  *
- * ACTIVE GRADES (3 only):
- *   1. third_preparatory (الصف الثالث الإعدادي)
- *   2. first_secondary (الصف الأول الثانوي)
- *   3. second_secondary / second_secondary_baccalaureate (الصف الثاني البكالوريا)
+ * ACTIVE GRADES (5 total):
+ *   1. first_preparatory  (الصف الأول الإعدادي)   ← جديد
+ *   2. second_preparatory (الصف الثاني الإعدادي)  ← جديد
+ *   3. third_preparatory  (الصف الثالث الإعدادي)
+ *   4. first_secondary    (الصف الأول الثانوي)
+ *   5. second_secondary / second_secondary_baccalaureate (الصف الثاني البكالوريا)
  *
  * ARCHIVED / DISABLED GRADES (kept in DB for backward compat, hidden from UI):
  *   - third_secondary (الصف الثالث الثانوي - مؤرشف)
  */
 
 export const ACTIVE_GRADES = [
+    { value: 'first_preparatory', label: 'الصف الأول الإعدادي', short: '١ إعدادي', slug: 'first-prep' },
+    { value: 'second_preparatory', label: 'الصف الثاني الإعدادي', short: '٢ إعدادي', slug: 'second-prep' },
     { value: 'third_preparatory', label: 'الصف الثالث الإعدادي', short: '٣ إعدادي', slug: 'third-prep' },
     { value: 'first_secondary', label: 'الصف الأول الثانوي', short: '١ ثانوي', slug: 'first-secondary' },
     { value: 'second_secondary', label: 'الصف الثاني البكالوريا', short: '٢ بكالوريا', slug: 'second-baccalaureate' },
@@ -27,9 +31,11 @@ export const GRADE_VALUES = ACTIVE_GRADES.map(g => g.value);
 
 /**
  * Values accepted for NEW registrations and content creation.
- * 3 active grades only — no legacy aliases here.
+ * 5 active grades — no legacy aliases here.
  */
 export const ACTIVE_GRADE_VALUES = [
+    'first_preparatory',
+    'second_preparatory',
     'third_preparatory',
     'first_secondary',
     'second_secondary',
@@ -40,6 +46,8 @@ export const ACTIVE_GRADE_VALUES = [
  * so existing historical data is preserved).
  */
 export const ALL_GRADE_VALUES: string[] = [
+    'first_preparatory',
+    'second_preparatory',
     'third_preparatory',
     'first_secondary',
     'second_secondary',
@@ -58,6 +66,8 @@ export function isGradeActive(value?: string | null): boolean {
 export function gradeLabel(value?: string | null): string {
     if (!value) return '';
     const map: Record<string, string> = {
+        first_preparatory: 'الصف الأول الإعدادي',
+        second_preparatory: 'الصف الثاني الإعدادي',
         third_preparatory: 'الصف الثالث الإعدادي',
         first_secondary: 'الصف الأول الثانوي',
         second_secondary: 'الصف الثاني البكالوريا',
@@ -71,6 +81,8 @@ export function gradeLabel(value?: string | null): string {
 export function gradeShort(value?: string | null): string {
     if (!value) return '';
     const map: Record<string, string> = {
+        first_preparatory: '١ إعدادي',
+        second_preparatory: '٢ إعدادي',
         third_preparatory: '٣ إعدادي',
         first_secondary: '١ ثانوي',
         second_secondary: '٢ بكالوريا',
@@ -83,6 +95,10 @@ export function gradeShort(value?: string | null): string {
 /** Slug to grade value converter */
 export function gradeFromSlug(slug: string): string | null {
     const slugMap: Record<string, string> = {
+        'first-prep': 'first_preparatory',
+        'first_preparatory': 'first_preparatory',
+        'second-prep': 'second_preparatory',
+        'second_preparatory': 'second_preparatory',
         'third-prep': 'third_preparatory',
         'third_preparatory': 'third_preparatory',
         'first-secondary': 'first_secondary',
@@ -98,6 +114,8 @@ export function gradeFromSlug(slug: string): string | null {
 /** Grade value to URL slug converter */
 export function gradeToSlug(value: string): string {
     const map: Record<string, string> = {
+        first_preparatory: 'first-prep',
+        second_preparatory: 'second-prep',
         third_preparatory: 'third-prep',
         first_secondary: 'first-secondary',
         second_secondary: 'second-baccalaureate',

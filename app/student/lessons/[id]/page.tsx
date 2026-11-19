@@ -1,10 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import VideoPlayer from '@/components/shared/VideoPlayer';
 import BlockedContentCard from '@/components/shared/BlockedContentCard';
+
+const REQUIRED_WATCH_PCT = 50; // must match backend
 
 export default function LessonDetailsPage() {
     const { id } = useParams();
@@ -19,6 +21,11 @@ export default function LessonDetailsPage() {
     const [linkedQuiz, setLinkedQuiz] = useState<any>(null);
     const [solutionVideos, setSolutionVideos] = useState<any[]>([]);
     const [videoCompleted, setVideoCompleted] = useState(false);
+    // Live watched percentage from VideoPlayer
+    const [liveWatchedPct, setLiveWatchedPct] = useState(0);
+    const [completing, setCompleting] = useState(false);
+    const [completeError, setCompleteError] = useState('');
+    const [completeSuccess, setCompleteSuccess] = useState('');
     // Watermark settings (from DB)
     const [watermarkEnabled, setWatermarkEnabled] = useState(true);
     const [watermarkFields, setWatermarkFields] = useState<'name' | 'name_id' | 'name_grade'>('name');
@@ -40,7 +47,6 @@ export default function LessonDetailsPage() {
             if (res.success) {
                 setData(res.data.lesson);
                 setStudentName(res.data.studentName || '');
-                // Build non-sensitive student identifiers from lesson response
                 if (res.data.studentId) {
                     setStudentIdSuffix(String(res.data.studentId).slice(-4));
                 }
@@ -49,7 +55,9 @@ export default function LessonDetailsPage() {
                 }
                 if (res.data.watchProgress) {
                     setProgress(res.data.watchProgress);
-                    setVideoCompleted(res.data.watchProgress.isCompleted || false);
+                    const isComp = res.data.watchProgress.isCompleted || false;
+                    setVideoCompleted(isComp);
+                    setLiveWatchedPct(res.data.watchProgress.watchedPercentage || 0);
                 }
                 // Fetch linked quiz
                 fetch(`/api/student/exams?type=quiz&lessonId=${id}`)
@@ -81,21 +89,47 @@ export default function LessonDetailsPage() {
             .finally(() => setLoading(false));
     }, [id]);
 
+    // Called by VideoPlayer on progress updates
+    const handleProgressUpdate = useCallback((pct: number) => {
+        setLiveWatchedPct(pct);
+        setCompleteError('');
+    }, []);
+
+    // Called by VideoPlayer when it internally detects completion threshold
+    const handlePlayerCompleted = useCallback(() => {
+        // Don't auto-complete — just unlock the button
+    }, []);
+
     const markAsCompleted = async () => {
-        if (!data) return;
+        if (!data || completing || videoCompleted) return;
+
+        if (liveWatchedPct < REQUIRED_WATCH_PCT) {
+            setCompleteError(`يجب مشاهدة ${REQUIRED_WATCH_PCT}% على الأقل من الفيديو لإتمامه والحصول على النقاط. لقد شاهدت ${liveWatchedPct}% حتى الآن.`);
+            return;
+        }
+
+        setCompleting(true);
+        setCompleteError('');
+        setCompleteSuccess('');
+
         try {
-            const res = await fetch('/api/student/lessons/progress', {
+            const res = await fetch('/api/student/lessons/complete', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ lessonId: data._id, watchedPercentage: 100 }),
+                body: JSON.stringify({ lessonId: data._id }),
             });
             const result = await res.json();
             if (result.success) {
                 setProgress(result.data);
                 setVideoCompleted(true);
+                setCompleteSuccess(result.data?.message || 'تم إتمام الحصة بنجاح! 🎉');
+            } else {
+                setCompleteError(result.message || 'لم يتم إتمام الحصة. حاول مرة أخرى.');
             }
         } catch {
-            /* silent */
+            setCompleteError('خطأ في الاتصال. حاول مرة أخرى.');
+        } finally {
+            setCompleting(false);
         }
     };
 
@@ -116,6 +150,9 @@ export default function LessonDetailsPage() {
             </div>
         );
     }
+
+    const canComplete = liveWatchedPct >= REQUIRED_WATCH_PCT;
+    const progressColor = liveWatchedPct >= REQUIRED_WATCH_PCT ? 'bg-tawfeek-green' : 'bg-yellow-400';
 
     return (
         <div className="max-w-5xl mx-auto space-y-6 animate-fadeIn pt-4 pb-20">
@@ -150,26 +187,87 @@ export default function LessonDetailsPage() {
                 watermarkInterval={watermarkInterval}
                 lessonId={data._id}
                 initialProgress={progress?.watchedPercentage || 0}
-                onCompleted={() => setVideoCompleted(true)}
+                onCompleted={handlePlayerCompleted}
+                onProgressUpdate={handleProgressUpdate}
             />
 
+            {/* Watch Progress Bar */}
+            {!videoCompleted && (
+                <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
+                    <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm font-bold text-gray-700">تقدم المشاهدة الفعلية</span>
+                        <span className={`text-sm font-black ${canComplete ? 'text-tawfeek-green' : 'text-gray-500'}`}>
+                            {liveWatchedPct}%
+                            {canComplete && <span className="mr-1">✓ مؤهل للإتمام</span>}
+                        </span>
+                    </div>
+                    <div className="w-full bg-gray-100 rounded-full h-3 overflow-hidden">
+                        <div
+                            className={`h-full rounded-full transition-all duration-500 ${progressColor}`}
+                            style={{ width: `${liveWatchedPct}%` }}
+                        />
+                    </div>
+                    <div className="flex items-center justify-between mt-1.5 text-xs text-gray-400">
+                        <span>0%</span>
+                        <span className="text-xs font-bold text-yellow-600">50% — الحد المطلوب</span>
+                        <span>100%</span>
+                    </div>
+                    {/* 50% marker */}
+                    <div className="relative mt-0.5">
+                        <div className="absolute left-1/2 -translate-x-1/2 w-px h-2 bg-yellow-400 opacity-60" />
+                    </div>
+                </div>
+            )}
+
+            {/* Completion Card */}
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col sm:flex-row items-center justify-between gap-4">
                 <div className="text-center sm:text-right">
                     <h3 className="font-bold text-gray-900 text-lg mb-1">هل أنهيت مشاهدة الحصة؟</h3>
-                    <p className="text-sm text-gray-500 max-w-lg">
-                        تأكد من استكمال الشرح لضمان تحصيلك الكامل، ستُمنح النقاط بمجرد التأكيد.
-                    </p>
+                    {videoCompleted ? (
+                        <p className="text-sm text-tawfeek-green font-bold">✅ تم إتمام هذه الحصة والحصول على النقاط.</p>
+                    ) : canComplete ? (
+                        <p className="text-sm text-gray-500 max-w-lg">
+                            ممتاز! لقد شاهدت {liveWatchedPct}% من الحصة. اضغط زر الإتمام للحصول على النقاط.
+                        </p>
+                    ) : (
+                        <p className="text-sm text-gray-500 max-w-lg">
+                            يجب مشاهدة <strong>50% على الأقل</strong> من الفيديو لإتمامه والحصول على النقاط.
+                            {liveWatchedPct > 0 && ` (شاهدت ${liveWatchedPct}% حتى الآن)`}
+                        </p>
+                    )}
                 </div>
 
                 <button
                     onClick={markAsCompleted}
-                    disabled={videoCompleted || progress?.isCompleted}
-                    className={`btn-primary flex items-center justify-center gap-2 px-6 disabled:opacity-75 disabled:bg-tawfeek-green disabled:text-white disabled:cursor-default w-full sm:w-auto`}
+                    disabled={videoCompleted || completing || !canComplete}
+                    className={`btn-primary flex items-center justify-center gap-2 px-6 w-full sm:w-auto transition-all
+                        ${!canComplete && !videoCompleted ? 'opacity-50 cursor-not-allowed bg-gray-400 hover:bg-gray-400' : ''}
+                        ${videoCompleted ? 'disabled:opacity-75 disabled:bg-tawfeek-green disabled:text-white disabled:cursor-default' : ''}
+                    `}
                 >
                     <span className="text-xl">✓</span>
-                    {(videoCompleted || progress?.isCompleted) ? 'تم إتمام الحصة ✅' : 'تأكيد إتمام المشاهدة'}
+                    {completing
+                        ? 'جاري الإتمام...'
+                        : videoCompleted
+                            ? 'تم إتمام الحصة ✅'
+                            : !canComplete
+                                ? `أكمل المشاهدة (${liveWatchedPct}% / 50%)`
+                                : 'تأكيد إتمام المشاهدة'
+                    }
                 </button>
             </div>
+
+            {/* Success / Error Messages */}
+            {completeSuccess && (
+                <div className="bg-tawfeek-green/10 border border-tawfeek-green/30 text-tawfeek-green rounded-xl px-4 py-3 text-sm font-bold text-center">
+                    {completeSuccess}
+                </div>
+            )}
+            {completeError && (
+                <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm text-center">
+                    {completeError}
+                </div>
+            )}
 
             {/* Linked Solution Videos Section */}
             {solutionVideos.length > 0 && (

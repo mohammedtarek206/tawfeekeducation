@@ -73,7 +73,7 @@ const UserSchema = new Schema<IUser>(
         avatar: { type: String },
         grade: {
             type: String,
-            enum: ['first_secondary', 'second_secondary', 'third_secondary', 'third_preparatory', 'second_secondary_baccalaureate', ''],
+            enum: ['first_preparatory', 'second_preparatory', 'third_preparatory', 'first_secondary', 'second_secondary', 'third_secondary', 'second_secondary_baccalaureate', ''],
         },
         governorate: { type: String, trim: true },
         parentName: { type: String, trim: true },
