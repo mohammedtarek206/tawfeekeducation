@@ -44,6 +44,7 @@ async function handler(
         type: 'admin_adjustment',
         reason: reason.trim(),
         awardedBy: adminUser.userId,
+        allowNonApproved: true,
     });
 
     if (!result.success) {

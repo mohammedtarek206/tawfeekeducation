@@ -46,7 +46,16 @@ export async function checkAndAwardAchievements(studentId: string): Promise<void
                         pointsEarned: ach.pointsReward || 0,
                     });
                     if (ach.pointsReward > 0) {
-                        await User.findByIdAndUpdate(studentId, { $inc: { points: ach.pointsReward } });
+                        const { awardPoints } = await import('@/lib/gamification/engine');
+                        await awardPoints({
+                            studentId,
+                            amount: ach.pointsReward,
+                            type: 'achievement',
+                            reason: `إنجاز: ${ach.title}`,
+                            referenceId: ach._id,
+                            referenceType: 'Achievement',
+                            idempotencyKey: `achievement_${studentId}_${ach._id}`,
+                        });
                     }
                     // Create notification
                     try {

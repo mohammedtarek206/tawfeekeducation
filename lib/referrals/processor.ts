@@ -158,6 +158,7 @@ export async function evaluateReferralForStudent(
         reason: `مكافأة دعوة الطالب (${referredUser.name || 'صديق جديد'})`,
         referenceId: referral._id,
         referenceType: 'Referral',
+        idempotencyKey: `referral_${referral._id}`,
         awardedBy: adminId,
     });
 
@@ -219,6 +220,7 @@ export async function checkReferralAchievements(referrerId: string): Promise<voi
                             reason: `مكافأة وسام: ${ach.title}`,
                             referenceId: studentAch._id,
                             referenceType: 'StudentAchievement',
+                            idempotencyKey: `ref_ach_${referrerId}_${ach._id}`,
                         });
                     }
                 } catch (e: any) {

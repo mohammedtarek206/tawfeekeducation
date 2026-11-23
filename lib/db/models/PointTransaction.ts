@@ -22,7 +22,9 @@ export interface IPointTransaction extends Document {
     referenceType?: string;
     balanceAfter: number;
     createdBy?: mongoose.Types.ObjectId;
+    idempotencyKey?: string;
     createdAt: Date;
+    updatedAt: Date;
 }
 
 const PointTransactionSchema = new Schema<IPointTransaction>(
@@ -52,11 +54,13 @@ const PointTransactionSchema = new Schema<IPointTransaction>(
         referenceType: { type: String },
         balanceAfter: { type: Number, required: true },
         createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
+        idempotencyKey: { type: String, sparse: true, index: true },
     },
     { timestamps: true }
 );
 
 PointTransactionSchema.index({ student: 1, createdAt: -1 });
+PointTransactionSchema.index({ student: 1, type: 1, referenceId: 1 });
 
 const PointTransaction =
     mongoose.models.PointTransaction ||

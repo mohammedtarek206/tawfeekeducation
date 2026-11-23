@@ -57,13 +57,7 @@ export async function checkStudentAccess(
         return { canAccess: true, reason: 'content_is_free', user };
     }
 
-    // Free students get full access without a Subscription record requirement
-    if (user.isFreeStudent) {
-        return { canAccess: true, reason: 'active_subscription', user };
-    }
-
     const now = new Date();
-
 
     // Query active real Subscription records in MongoDB
     const query: any = {
@@ -74,7 +68,11 @@ export async function checkStudentAccess(
     };
 
     if (options.grade) {
-        query.$or = [{ gradeId: options.grade }, { gradeId: '' }, { gradeId: { $exists: false } }];
+        const studentGrade = options.grade;
+        const matchingGrades = (studentGrade === 'second_secondary' || studentGrade === 'second_secondary_baccalaureate')
+            ? ['second_secondary', 'second_secondary_baccalaureate', 'all', '', null]
+            : [studentGrade, 'all', '', null];
+        query.$or = [{ gradeId: { $in: matchingGrades } }, { gradeId: { $exists: false } }];
     }
 
     const activeSubscription = await Subscription.findOne(query)
@@ -86,7 +84,7 @@ export async function checkStudentAccess(
         return { canAccess: true, reason: 'active_subscription', user, subscription: activeSubscription };
     }
 
-    // Check legacy / sync User fields as fallback (if user.isFreeStudent or user.subscriptionStatus === 'active')
+    // Check legacy / sync User fields as fallback if valid and not expired
     if (
         user.subscriptionStatus === 'active' &&
         user.subscriptionEndDate &&
@@ -95,13 +93,20 @@ export async function checkStudentAccess(
         return { canAccess: true, reason: 'active_subscription', user };
     }
 
-    // Check if subscription was previously active but expired
+    // Check if subscription was previously active or free but is now expired
+    const isExpiredOnUser = Boolean(user.subscriptionEndDate && new Date(user.subscriptionEndDate) < now);
     const hasExpiredSubscription = await Subscription.findOne({
         studentId: user._id,
         endDate: { $lt: now },
     }).lean();
 
-    if (hasExpiredSubscription || user.subscriptionStatus === 'expired') {
+    if (isExpiredOnUser || hasExpiredSubscription || user.subscriptionStatus === 'expired') {
+        // Self-heal: sync user status to 'expired' if end date has passed
+        if (user.subscriptionStatus === 'active' || (user.isFreeStudent && isExpiredOnUser)) {
+            await User.findByIdAndUpdate(user._id, {
+                $set: { subscriptionStatus: 'expired' },
+            }).catch(() => {});
+        }
         return { canAccess: false, reason: 'subscription_expired', user };
     }
 

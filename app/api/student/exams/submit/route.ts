@@ -6,7 +6,7 @@ import Question from '@/lib/db/models/Question';
 import User from '@/lib/db/models/User';
 import { withStudent } from '@/lib/auth/middleware';
 import { JWTPayload } from '@/lib/auth/jwt';
-import { awardPoints } from '@/lib/gamification/engine';
+import { awardPoints, getGamificationSettings } from '@/lib/gamification/engine';
 import { checkAndAwardAchievements } from '@/lib/utils/achievements';
 import mongoose from 'mongoose';
 
@@ -124,8 +124,17 @@ async function postHandler(req: NextRequest, _ctx: unknown, student: JWTPayload)
     const passed = !hasUngradedEssays && percentage >= exam.passingScore;
 
     // Determine points earned (0 if essays pending)
-    const pointsMultiplier = examType === 'monthly_exam' ? 100 : examType === 'weekly_exam' ? 50 : 10;
-    const basePoints = parseInt(process.env[`DEFAULT_${examType.toUpperCase()}_POINTS`] || String(pointsMultiplier));
+    const gamificationSettings = await getGamificationSettings();
+    let basePoints = (exam as any).points || exam.totalPoints || 0;
+    if (!basePoints || basePoints <= 0) {
+        if (examType === 'monthly_exam') {
+            basePoints = gamificationSettings.monthlyExamPoints;
+        } else if (examType === 'weekly_exam') {
+            basePoints = gamificationSettings.weeklyExamPoints;
+        } else {
+            basePoints = gamificationSettings.quizCompletePoints;
+        }
+    }
     const earnedPoints = hasUngradedEssays ? 0 : Math.round(basePoints * (percentage / 100));
 
     // Create attempt record
@@ -156,18 +165,21 @@ async function postHandler(req: NextRequest, _ctx: unknown, student: JWTPayload)
         });
 
         if (!alreadyRewarded) {
-            await awardPoints({
+            const pointRes = await awardPoints({
                 studentId: student.userId,
                 amount: earnedPoints,
-                type: 'exam_completed',
-                reason: `${examType === 'monthly_exam' ? 'امتحان شهري' : examType === 'weekly_exam' ? 'امتحان أسبوعي' : 'كويز'} - ${percentage}%`,
+                type: examType === 'lesson_quiz' || examType === 'quiz' ? 'quiz_completed' : 'exam_completed',
+                reason: `${exam.title || (examType === 'monthly_exam' ? 'امتحان شهري' : examType === 'weekly_exam' ? 'امتحان أسبوعي' : 'كويز')} - ${percentage}%`,
                 referenceId: examId,
                 referenceType: 'Exam',
+                idempotencyKey: `exam_${student.userId}_${examId}`,
             });
 
-            await ExamAttempt.findByIdAndUpdate(attempt._id, { pointsAwarded: true });
-            // Fire achievement check (non-blocking)
-            checkAndAwardAchievements(student.userId).catch(() => { });
+            if (pointRes.success) {
+                await ExamAttempt.findByIdAndUpdate(attempt._id, { pointsAwarded: true });
+                // Fire achievement check (non-blocking)
+                checkAndAwardAchievements(student.userId).catch(() => { });
+            }
         }
     }
 

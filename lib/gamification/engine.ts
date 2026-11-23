@@ -13,6 +13,8 @@ export interface AwardPointsOptions {
     referenceId?: string | mongoose.Types.ObjectId;
     referenceType?: string;
     awardedBy?: string | mongoose.Types.ObjectId;
+    idempotencyKey?: string;
+    allowNonApproved?: boolean;
 }
 
 export interface AwardPointsResult {
@@ -20,7 +22,54 @@ export interface AwardPointsResult {
     newBalance: number;
     levelUp?: boolean;
     newLevel?: number;
+    alreadyAwarded?: boolean;
     error?: string;
+}
+
+export interface GamificationSettings {
+    lessonWatchPoints: number;
+    lessonCompletePoints: number;
+    quizCompletePoints: number;
+    weeklyExamPoints: number;
+    monthlyExamPoints: number;
+    streakBonus: number;
+    referralPoints: number;
+    videoCompletionThreshold: number;
+}
+
+export async function getGamificationSettings(): Promise<GamificationSettings> {
+    await connectDB();
+    const Settings = (await import('@/lib/db/models/Settings')).default;
+    const settingsList = await Settings.find({
+        key: {
+            $in: [
+                'lesson_watch_points',
+                'lesson_complete_points',
+                'quiz_complete_points',
+                'weekly_exam_points',
+                'monthly_exam_points',
+                'streak_bonus',
+                'referral_points',
+                'video_completion_threshold',
+            ],
+        },
+    }).lean();
+
+    const map: Record<string, any> = {};
+    settingsList.forEach((s: any) => {
+        map[s.key] = s.value;
+    });
+
+    return {
+        lessonWatchPoints: parseInt(String(map['lesson_watch_points'] ?? process.env.DEFAULT_LESSON_WATCH_POINTS ?? '1'), 10) || 1,
+        lessonCompletePoints: parseInt(String(map['lesson_complete_points'] ?? process.env.DEFAULT_LESSON_COMPLETE_POINTS ?? '10'), 10) || 10,
+        quizCompletePoints: parseInt(String(map['quiz_complete_points'] ?? process.env.DEFAULT_QUIZ_POINTS ?? '10'), 10) || 10,
+        weeklyExamPoints: parseInt(String(map['weekly_exam_points'] ?? process.env.DEFAULT_WEEKLY_EXAM_POINTS ?? '50'), 10) || 50,
+        monthlyExamPoints: parseInt(String(map['monthly_exam_points'] ?? process.env.DEFAULT_MONTHLY_EXAM_POINTS ?? '100'), 10) || 100,
+        streakBonus: parseInt(String(map['streak_bonus'] ?? process.env.DEFAULT_STREAK_BONUS ?? '5'), 10) || 5,
+        referralPoints: parseInt(String(map['referral_points'] ?? process.env.DEFAULT_REFERRAL_POINTS ?? '5'), 10) || 5,
+        videoCompletionThreshold: parseInt(String(map['video_completion_threshold'] ?? '50'), 10) || 50,
+    };
 }
 
 export async function awardPoints(options: AwardPointsOptions): Promise<AwardPointsResult> {
@@ -28,35 +77,101 @@ export async function awardPoints(options: AwardPointsOptions): Promise<AwardPoi
 
     const student = await User.findById(options.studentId).select('points level role status');
     if (!student) {
-        return { success: false, newBalance: 0, error: 'Student not found' };
+        return { success: false, newBalance: 0, error: 'الطالب غير موجود' };
     }
 
-    if (student.role !== 'student' || student.status !== 'approved') {
-        return { success: false, newBalance: 0, error: 'Invalid student' };
+    if (student.role !== 'student') {
+        return { success: false, newBalance: 0, error: 'المستخدم ليس طالباً' };
     }
 
-    const newBalance = Math.max(0, student.points + options.amount);
+    if (!options.allowNonApproved && options.type !== 'admin_adjustment' && student.status !== 'approved') {
+        return { success: false, newBalance: student.points || 0, error: 'حساب الطالب غير مفعّل' };
+    }
+
+    // ── Idempotency Check: By idempotencyKey ──
+    if (options.idempotencyKey) {
+        const existingTx = await PointTransaction.findOne({
+            student: options.studentId,
+            idempotencyKey: options.idempotencyKey,
+        }).lean() as any;
+
+        if (existingTx) {
+            return {
+                success: true,
+                newBalance: existingTx.balanceAfter,
+                alreadyAwarded: true,
+            };
+        }
+    }
+
+    // ── Duplicate Prevention: By referenceId + type (for non-admin, non-bonus activities) ──
+    if (options.referenceId && options.type && !['admin_adjustment', 'bonus'].includes(options.type)) {
+        try {
+            const refObjectId = new mongoose.Types.ObjectId(options.referenceId.toString());
+            const existingRefTx = await PointTransaction.findOne({
+                student: options.studentId,
+                type: options.type,
+                referenceId: refObjectId,
+            }).lean() as any;
+
+            if (existingRefTx) {
+                return {
+                    success: true,
+                    newBalance: student.points || existingRefTx.balanceAfter,
+                    alreadyAwarded: true,
+                };
+            }
+        } catch {
+            // If referenceId is not a valid ObjectId, continue
+        }
+    }
+
+    const currentPoints = typeof student.points === 'number' ? student.points : 0;
+    let effectiveAmount = options.amount;
+    let newBalance = currentPoints + effectiveAmount;
+
+    // Balance cannot go negative
+    if (newBalance < 0) {
+        effectiveAmount = -currentPoints;
+        newBalance = 0;
+    }
 
     try {
-        // Try atomic update
+        // Atomic update of points and updatedAt for deterministic leaderboard ordering
         const updated = await User.findByIdAndUpdate(
             options.studentId,
-            { $inc: { points: options.amount } },
+            {
+                $set: {
+                    points: newBalance,
+                    updatedAt: new Date(),
+                },
+            },
             { new: true }
         );
 
         const currentBalance = updated ? updated.points : newBalance;
 
-        // Record transaction
+        // Record immutable ledger transaction
+        let refObjectId: mongoose.Types.ObjectId | undefined = undefined;
+        if (options.referenceId && mongoose.Types.ObjectId.isValid(options.referenceId.toString())) {
+            refObjectId = new mongoose.Types.ObjectId(options.referenceId.toString());
+        }
+
+        let createdByObjectId: mongoose.Types.ObjectId | undefined = undefined;
+        if (options.awardedBy && mongoose.Types.ObjectId.isValid(options.awardedBy.toString())) {
+            createdByObjectId = new mongoose.Types.ObjectId(options.awardedBy.toString());
+        }
+
         await PointTransaction.create({
             student: options.studentId,
-            amount: options.amount,
+            amount: effectiveAmount,
             type: options.type,
             reason: options.reason,
-            referenceId: options.referenceId,
+            referenceId: refObjectId,
             referenceType: options.referenceType,
             balanceAfter: currentBalance,
-            createdBy: options.awardedBy,
+            createdBy: createdByObjectId,
+            idempotencyKey: options.idempotencyKey,
         });
 
         // Check level up
@@ -73,17 +188,17 @@ export async function awardPoints(options: AwardPointsOptions): Promise<AwardPoi
                 type: 'general',
                 title: 'تهانينا! ارتقيت مستوى',
                 message: `لقد وصلت إلى المستوى ${newLevel}! استمر في التقدم.`,
-            });
+            }).catch(() => {});
         }
 
         // Send points notification
-        if (options.amount > 0) {
+        if (effectiveAmount > 0) {
             await Notification.create({
                 user: options.studentId,
                 type: 'points_earned',
                 title: 'نقاط جديدة!',
-                message: `حصلت على ${options.amount} نقطة - ${options.reason}`,
-            });
+                message: `حصلت على ${effectiveAmount} نقطة - ${options.reason}`,
+            }).catch(() => {});
         }
 
         return {
@@ -94,7 +209,7 @@ export async function awardPoints(options: AwardPointsOptions): Promise<AwardPoi
         };
     } catch (error) {
         console.error('Award points error:', error);
-        return { success: false, newBalance: student.points, error: 'Failed to award points' };
+        return { success: false, newBalance: student.points || 0, error: 'فشل في حفظ وتحديث النقاط' };
     }
 }
 
@@ -276,15 +391,95 @@ export async function updateStreak(studentId: string): Promise<number> {
     });
 
     // Award streak bonus if applicable
-    const streakBonus = parseInt(process.env.DEFAULT_STREAK_BONUS || '5');
+    const settings = await getGamificationSettings();
+    const streakBonus = settings.streakBonus;
     if (newStreak > 0 && newStreak % 7 === 0) {
         await awardPoints({
             studentId,
             amount: streakBonus * newStreak,
             type: 'streak_bonus',
             reason: `مكافأة المداومة - ${newStreak} يوم متواصل`,
+            idempotencyKey: `streak_${studentId}_${newStreak}_${now.toISOString().slice(0, 10)}`,
         });
     }
 
     return newStreak;
+}
+
+export interface StudentPointsBreakdown {
+    totalPoints: number;
+    videoPoints: number;
+    examPoints: number;
+    achievementPoints: number;
+    referralPoints: number;
+    adminAddedPoints: number;
+    deductedPoints: number;
+    recentTransactions: any[];
+}
+
+export async function getStudentPointsBreakdown(studentId: string | mongoose.Types.ObjectId): Promise<StudentPointsBreakdown> {
+    await connectDB();
+    const studentObjectId = new mongoose.Types.ObjectId(studentId.toString());
+
+    const [user, transactions, summaryAgg] = await Promise.all([
+        User.findById(studentObjectId).select('points level').lean(),
+        PointTransaction.find({ student: studentObjectId })
+            .sort({ createdAt: -1 })
+            .limit(20)
+            .lean(),
+        PointTransaction.aggregate([
+            { $match: { student: studentObjectId } },
+            {
+                $group: {
+                    _id: '$type',
+                    totalAmount: { $sum: '$amount' },
+                    positiveAmount: {
+                        $sum: { $cond: [{ $gt: ['$amount', 0] }, '$amount', 0] },
+                    },
+                    negativeAmount: {
+                        $sum: { $cond: [{ $lt: ['$amount', 0] }, { $abs: '$amount' }, 0] },
+                    },
+                },
+            },
+        ]),
+    ]);
+
+    const typeMap: Record<string, { total: number; positive: number; negative: number }> = {};
+    for (const item of summaryAgg) {
+        typeMap[item._id] = {
+            total: item.totalAmount || 0,
+            positive: item.positiveAmount || 0,
+            negative: item.negativeAmount || 0,
+        };
+    }
+
+    const videoPoints = (typeMap['lesson_completed']?.positive || 0) + (typeMap['lesson_watch']?.positive || 0);
+    const examPoints = (typeMap['exam_completed']?.positive || 0) + (typeMap['quiz_completed']?.positive || 0);
+    const achievementPoints = (typeMap['achievement']?.positive || 0) + (typeMap['task_completion']?.positive || 0);
+    const referralPoints = typeMap['referral']?.positive || 0;
+    const adminAddedPoints = typeMap['admin_adjustment']?.positive || 0;
+
+    let deductedPoints = 0;
+    for (const key of Object.keys(typeMap)) {
+        deductedPoints += typeMap[key].negative;
+    }
+
+    return {
+        totalPoints: (user as any)?.points || 0,
+        videoPoints,
+        examPoints,
+        achievementPoints,
+        referralPoints,
+        adminAddedPoints,
+        deductedPoints,
+        recentTransactions: transactions.map((t: any) => ({
+            id: t._id.toString(),
+            amount: t.amount,
+            type: t.type,
+            reason: t.reason,
+            balanceAfter: t.balanceAfter,
+            createdAt: t.createdAt,
+            referenceType: t.referenceType,
+        })),
+    };
 }

@@ -221,15 +221,24 @@ async function postHandler(req: NextRequest, _ctx: unknown, student: JWTPayload)
             attemptNumber: 1,
         });
 
-        // Award reward points for completing practice
-        awardPoints({
-            studentId: student.userId,
-            amount: 5,
-            type: 'task_completion',
-            reason: `جلسة تدريب على بنك الأسئلة - ${percentage}%`,
-            referenceId: attempt._id.toString(),
-            referenceType: 'ExamAttempt',
-        }).catch(() => {});
+        // Award reward points for completing practice (with idempotency)
+        let awardedPointsResult = null;
+        try {
+            awardedPointsResult = await awardPoints({
+                studentId: student.userId,
+                amount: 5,
+                type: 'task_completion',
+                reason: `جلسة تدريب على بنك الأسئلة - ${percentage}%`,
+                referenceId: attempt._id.toString(),
+                referenceType: 'ExamAttempt',
+                idempotencyKey: `practice_${student.userId}_${attempt._id}`,
+            });
+            if (awardedPointsResult?.success) {
+                await ExamAttempt.findByIdAndUpdate(attempt._id, { pointsAwarded: true });
+            }
+        } catch (err) {
+            console.error('Failed to award practice points:', err);
+        }
 
         return NextResponse.json({
             success: true,

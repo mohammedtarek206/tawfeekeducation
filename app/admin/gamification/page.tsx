@@ -112,8 +112,10 @@ export default function AdminGamificationPage() {
     const [studentTransactions, setStudentTransactions] = useState<Transaction[]>([]);
     const [txLoading, setTxLoading] = useState(false);
 
-    // Single student Deduct / Reset state
-    const [operationType, setOperationType] = useState<'deduction' | 'reset'>('deduction');
+    // Single student Add / Deduct / Reset state
+    const [operationType, setOperationType] = useState<'addition' | 'deduction' | 'reset'>('deduction');
+    const [addAmount, setAddAmount] = useState('');
+    const [addReason, setAddReason] = useState('');
     const [deductAmount, setDeductAmount] = useState('');
     const [deductReason, setDeductReason] = useState('');
     const [resetReason, setResetReason] = useState('');
@@ -231,6 +233,13 @@ export default function AdminGamificationPage() {
     };
 
     /* ─── Single Student Validation ─── */
+    const parsedAddAmount = parseInt(addAmount, 10);
+    const canAdd =
+        selected &&
+        !isNaN(parsedAddAmount) &&
+        parsedAddAmount > 0 &&
+        addReason.trim().length >= 3;
+
     const parsedDeductAmount = parseInt(deductAmount, 10);
     const canDeduct =
         selected &&
@@ -244,18 +253,50 @@ export default function AdminGamificationPage() {
         (selected.points || 0) > 0 &&
         resetReason.trim().length >= 3;
 
-    /* ─── Execute Deduction or Reset for Single Student ─── */
+    /* ─── Execute Addition, Deduction or Reset for Single Student ─── */
     const handleExecuteOperation = async () => {
         if (!selected) return;
 
-        const isReset = operationType === 'reset';
-        if (isReset && !canReset) return;
-        if (!isReset && !canDeduct) return;
+        if (operationType === 'addition' && !canAdd) return;
+        if (operationType === 'reset' && !canReset) return;
+        if (operationType === 'deduction' && !canDeduct) return;
 
         setSubmitting(true);
         setActionMsg(null);
 
         try {
+            if (operationType === 'addition') {
+                const res = await fetch('/api/admin/points', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        studentId: selected._id,
+                        amount: parsedAddAmount,
+                        reason: addReason.trim(),
+                    }),
+                });
+
+                const json = await res.json();
+
+                if (json.success) {
+                    const newBalance = json.data?.newBalance ?? ((selected.points || 0) + parsedAddAmount);
+                    setActionMsg({ type: 'success', text: json.message || 'تمت إضافة النقاط بنجاح' });
+                    setSelected((prev) => (prev ? { ...prev, points: newBalance } : null));
+                    setStudents((prev) =>
+                        prev.map((s) => (s._id === selected._id ? { ...s, points: newBalance } : s))
+                    );
+                    setAddAmount('');
+                    setAddReason('');
+                    setShowConfirmModal(false);
+                    await loadStudentHistory(selected._id);
+                    loadOverview();
+                } else {
+                    setActionMsg({ type: 'error', text: json.message || 'فشلت عملية الإضافة' });
+                }
+                return;
+            }
+
+            const isReset = operationType === 'reset';
             const res = await fetch('/api/admin/points/deduct', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -727,53 +768,112 @@ export default function AdminGamificationPage() {
                                         )}
 
                                         {/* Operation Forms */}
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 pt-2">
+                                            {/* Addition Card */}
+                                            <div className="bg-emerald-50/50 border border-emerald-200 rounded-2xl p-4 space-y-3 flex flex-col justify-between">
+                                                <div className="space-y-3">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-lg">➕</span>
+                                                        <h4 className="font-bold text-emerald-900 text-sm">
+                                                            إضافة نقاط للطالب
+                                                        </h4>
+                                                    </div>
+
+                                                    <div>
+                                                        <label className="block text-xs font-bold text-gray-700 mb-1">
+                                                            عدد النقاط المراد إضافتها <span className="text-red-500">*</span>
+                                                        </label>
+                                                        <input
+                                                            type="number"
+                                                            min="1"
+                                                            placeholder="مثال: 50"
+                                                            value={addAmount}
+                                                            onChange={(e) => setAddAmount(e.target.value)}
+                                                            className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30 bg-white"
+                                                        />
+                                                        {addAmount && parsedAddAmount > 0 && (
+                                                            <p className="text-[11px] text-emerald-700 font-bold mt-1">
+                                                                ✔ الرصيد المتوقع بعد الإضافة:{' '}
+                                                                {((selected.points || 0) + parsedAddAmount).toLocaleString()} نقطة
+                                                            </p>
+                                                        )}
+                                                    </div>
+
+                                                    <div>
+                                                        <label className="block text-xs font-bold text-gray-700 mb-1">
+                                                            سبب الإضافة (مطلوب) <span className="text-red-500">*</span>
+                                                        </label>
+                                                        <textarea
+                                                            rows={2}
+                                                            placeholder="مثال: مكافأة تميز في المشاركة والأنشطة..."
+                                                            value={addReason}
+                                                            onChange={(e) => setAddReason(e.target.value)}
+                                                            className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30 bg-white resize-none"
+                                                        />
+                                                    </div>
+                                                </div>
+
+                                                <button
+                                                    type="button"
+                                                    disabled={!canAdd}
+                                                    onClick={() => {
+                                                        setOperationType('addition');
+                                                        setShowConfirmModal(true);
+                                                    }}
+                                                    className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold rounded-xl text-xs transition-colors shadow-sm"
+                                                >
+                                                    مراجعة وتأكيد الإضافة
+                                                </button>
+                                            </div>
+
                                             {/* Deduction Card */}
-                                            <div className="bg-gray-50/70 border border-gray-200 rounded-2xl p-4 space-y-3">
-                                                <div className="flex items-center gap-2">
-                                                    <span className="text-lg">📉</span>
-                                                    <h4 className="font-bold text-gray-900 text-sm">
-                                                        خصم عدد محدد من النقاط
-                                                    </h4>
-                                                </div>
+                                            <div className="bg-gray-50/70 border border-gray-200 rounded-2xl p-4 space-y-3 flex flex-col justify-between">
+                                                <div className="space-y-3">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-lg">📉</span>
+                                                        <h4 className="font-bold text-gray-900 text-sm">
+                                                            خصم عدد محدد من النقاط
+                                                        </h4>
+                                                    </div>
 
-                                                <div>
-                                                    <label className="block text-xs font-bold text-gray-700 mb-1">
-                                                        عدد النقاط المراد خصمها <span className="text-red-500">*</span>
-                                                    </label>
-                                                    <input
-                                                        type="number"
-                                                        min="1"
-                                                        max={selected.points || 0}
-                                                        placeholder="أدخل العدد..."
-                                                        value={deductAmount}
-                                                        onChange={(e) => setDeductAmount(e.target.value)}
-                                                        className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500/30 bg-white"
-                                                    />
-                                                    {deductAmount && parsedDeductAmount > (selected.points || 0) && (
-                                                        <p className="text-[11px] text-red-600 font-bold mt-1">
-                                                            ⛔ القيمة أكبر من الرصيد المتاح ({selected.points})
-                                                        </p>
-                                                    )}
-                                                    {deductAmount && parsedDeductAmount > 0 && parsedDeductAmount <= (selected.points || 0) && (
-                                                        <p className="text-[11px] text-emerald-700 font-bold mt-1">
-                                                            ✔ الرصيد المتوقع بعد الخصم:{' '}
-                                                            {((selected.points || 0) - parsedDeductAmount).toLocaleString()} نقطة
-                                                        </p>
-                                                    )}
-                                                </div>
+                                                    <div>
+                                                        <label className="block text-xs font-bold text-gray-700 mb-1">
+                                                            عدد النقاط المراد خصمها <span className="text-red-500">*</span>
+                                                        </label>
+                                                        <input
+                                                            type="number"
+                                                            min="1"
+                                                            max={selected.points || 0}
+                                                            placeholder="أدخل العدد..."
+                                                            value={deductAmount}
+                                                            onChange={(e) => setDeductAmount(e.target.value)}
+                                                            className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500/30 bg-white"
+                                                        />
+                                                        {deductAmount && parsedDeductAmount > (selected.points || 0) && (
+                                                            <p className="text-[11px] text-red-600 font-bold mt-1">
+                                                                ⛔ القيمة أكبر من الرصيد المتاح ({selected.points})
+                                                            </p>
+                                                        )}
+                                                        {deductAmount && parsedDeductAmount > 0 && parsedDeductAmount <= (selected.points || 0) && (
+                                                            <p className="text-[11px] text-emerald-700 font-bold mt-1">
+                                                                ✔ الرصيد المتوقع بعد الخصم:{' '}
+                                                                {((selected.points || 0) - parsedDeductAmount).toLocaleString()} نقطة
+                                                            </p>
+                                                        )}
+                                                    </div>
 
-                                                <div>
-                                                    <label className="block text-xs font-bold text-gray-700 mb-1">
-                                                        سبب الخصم (مطلوب) <span className="text-red-500">*</span>
-                                                    </label>
-                                                    <textarea
-                                                        rows={2}
-                                                        placeholder="مثال: خصم بسبب مخالفة شروط الاستخدام..."
-                                                        value={deductReason}
-                                                        onChange={(e) => setDeductReason(e.target.value)}
-                                                        className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500/30 bg-white resize-none"
-                                                    />
+                                                    <div>
+                                                        <label className="block text-xs font-bold text-gray-700 mb-1">
+                                                            سبب الخصم (مطلوب) <span className="text-red-500">*</span>
+                                                        </label>
+                                                        <textarea
+                                                            rows={2}
+                                                            placeholder="مثال: خصم بسبب مخالفة شروط الاستخدام..."
+                                                            value={deductReason}
+                                                            onChange={(e) => setDeductReason(e.target.value)}
+                                                            className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500/30 bg-white resize-none"
+                                                        />
+                                                    </div>
                                                 </div>
 
                                                 <button
@@ -1077,17 +1177,21 @@ export default function AdminGamificationPage() {
                             className={`w-14 h-14 rounded-2xl flex items-center justify-center text-3xl mx-auto shadow-inner ${
                                 operationType === 'reset'
                                     ? 'bg-red-50 text-red-600'
-                                    : 'bg-rose-50 text-rose-600'
+                                    : operationType === 'addition'
+                                        ? 'bg-emerald-50 text-emerald-600'
+                                        : 'bg-rose-50 text-rose-600'
                             }`}
                         >
-                            {operationType === 'reset' ? '🔄' : '⚠️'}
+                            {operationType === 'reset' ? '🔄' : operationType === 'addition' ? '➕' : '⚠️'}
                         </div>
 
                         <div className="text-center">
                             <h3 className="text-xl font-black text-gray-900">
                                 {operationType === 'reset'
                                     ? 'تأكيد تصفير نقاط الطالب'
-                                    : 'تأكيد خصم النقاط'}
+                                    : operationType === 'addition'
+                                        ? 'تأكيد إضافة النقاط'
+                                        : 'تأكيد خصم النقاط'}
                             </h3>
                             <p className="text-xs text-gray-500 mt-1">
                                 يرجى مراجعة تفاصيل العملية بدقة قبل الإرسال
@@ -1109,23 +1213,34 @@ export default function AdminGamificationPage() {
                                     {(selected.points || 0).toLocaleString()} نقطة
                                 </span>
                             </div>
-                            <div className="flex justify-between">
-                                <span className="text-gray-500 font-bold">المبلغ المخصوم:</span>
-                                <span className="font-black text-rose-600">
-                                    −
-                                    {(operationType === 'reset'
-                                        ? selected.points
-                                        : parsedDeductAmount
-                                    ).toLocaleString()}{' '}
-                                    نقطة
-                                </span>
-                            </div>
+                            {operationType === 'addition' ? (
+                                <div className="flex justify-between">
+                                    <span className="text-gray-500 font-bold">المبلغ المضاف:</span>
+                                    <span className="font-black text-emerald-600">
+                                        +{(parsedAddAmount || 0).toLocaleString()} نقطة
+                                    </span>
+                                </div>
+                            ) : (
+                                <div className="flex justify-between">
+                                    <span className="text-gray-500 font-bold">المبلغ المخصوم:</span>
+                                    <span className="font-black text-rose-600">
+                                        −
+                                        {(operationType === 'reset'
+                                            ? selected.points
+                                            : parsedDeductAmount
+                                        ).toLocaleString()}{' '}
+                                        نقطة
+                                    </span>
+                                </div>
+                            )}
                             <div className="flex justify-between border-t border-gray-200/60 pt-2">
                                 <span className="text-gray-500 font-bold">الرصيد بعد العملية:</span>
                                 <span className="font-black text-emerald-700">
-                                    {(operationType === 'reset'
-                                        ? 0
-                                        : (selected.points || 0) - parsedDeductAmount
+                                    {(operationType === 'addition'
+                                        ? (selected.points || 0) + parsedAddAmount
+                                        : operationType === 'reset'
+                                            ? 0
+                                            : (selected.points || 0) - parsedDeductAmount
                                     ).toLocaleString()}{' '}
                                     نقطة
                                 </span>
@@ -1135,7 +1250,11 @@ export default function AdminGamificationPage() {
                         <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs">
                             <span className="font-bold text-amber-800 block mb-0.5">السبب المسجل:</span>
                             <span className="text-amber-900 font-medium">
-                                {operationType === 'reset' ? resetReason : deductReason}
+                                {operationType === 'addition'
+                                    ? addReason
+                                    : operationType === 'reset'
+                                        ? resetReason
+                                        : deductReason}
                             </span>
                         </div>
 

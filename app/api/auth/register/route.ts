@@ -95,6 +95,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
                 referredBy: referrerId,
             });
 
+            // Automatic free offer grant if configured
+            try {
+                const { getFreeOfferSettings, assignFreeSlotAtomically } = await import('@/lib/settings/freeOffer');
+                const offerSettings = await getFreeOfferSettings();
+                if (offerSettings.freeOfferEnabled && offerSettings.freeOfferGrantMode === 'auto_register') {
+                    await assignFreeSlotAtomically(user._id.toString(), studentData.grade);
+                }
+            } catch (err) {
+                console.error('Auto free offer assignment error on registration:', err);
+            }
+
             // Create referral record if applicable
             if (referrerId) {
                 const { default: Referral } = await import('@/lib/db/models/Referral');

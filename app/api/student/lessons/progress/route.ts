@@ -5,7 +5,7 @@ import Lesson from '@/lib/db/models/Lesson';
 import User from '@/lib/db/models/User';
 import { withStudent } from '@/lib/auth/middleware';
 import { JWTPayload } from '@/lib/auth/jwt';
-import { awardPoints } from '@/lib/gamification/engine';
+import { awardPoints, getGamificationSettings } from '@/lib/gamification/engine';
 import { updateStreak } from '@/lib/gamification/engine';
 import { checkAndAwardAchievements } from '@/lib/utils/achievements';
 import mongoose from 'mongoose';
@@ -81,14 +81,16 @@ async function postHandler(req: NextRequest, _ctx: unknown, student: JWTPayload)
 
     // Award watch start points (one time, for starting to watch)
     if (safePercentage > 5 && !existing?.pointsAwarded && !existing) {
-        const watchStartPoints = parseInt(process.env.DEFAULT_LESSON_WATCH_POINTS || '5');
+        const gamificationSettings = await getGamificationSettings();
+        const watchStartPoints = gamificationSettings.lessonWatchPoints;
         await awardPoints({
             studentId: student.userId,
             amount: watchStartPoints,
             type: 'lesson_watch',
-            reason: 'مشاهدة الحصة',
+            reason: `مشاهدة الحصة: ${lesson.title || 'حصة'}`,
             referenceId: lessonId,
             referenceType: 'Lesson',
+            idempotencyKey: `lesson_watch_${student.userId}_${lessonId}`,
         });
     }
 

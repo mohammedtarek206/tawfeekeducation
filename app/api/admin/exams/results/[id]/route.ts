@@ -5,7 +5,7 @@ import Question from '@/lib/db/models/Question';
 import Exam from '@/lib/db/models/Exam';
 import { withAdmin } from '@/lib/auth/middleware';
 import { JWTPayload } from '@/lib/auth/jwt';
-import { awardPoints } from '@/lib/gamification/engine';
+import { awardPoints, getGamificationSettings } from '@/lib/gamification/engine';
 import { checkAndAwardAchievements } from '@/lib/utils/achievements';
 import mongoose from 'mongoose';
 
@@ -142,7 +142,12 @@ async function postHandler(req: NextRequest, ctx: any, admin: JWTPayload): Promi
     // Award gamification points once all essays are graded
     if (!stillPending && !updated.pointsAwarded && updated.examRef) {
         const examType = updated.examType;
-        const pointsMultiplier = examType === 'monthly_exam' ? 100 : examType === 'weekly_exam' ? 50 : 10;
+        const gamificationSettings = await getGamificationSettings();
+        const pointsMultiplier = examType === 'monthly_exam'
+            ? gamificationSettings.monthlyExamPoints
+            : examType === 'weekly_exam'
+                ? gamificationSettings.weeklyExamPoints
+                : gamificationSettings.quizCompletePoints;
         const earnedPoints = Math.round(pointsMultiplier * (percentage / 100));
 
         if (earnedPoints > 0) {
@@ -156,10 +161,11 @@ async function postHandler(req: NextRequest, ctx: any, admin: JWTPayload): Promi
                 await awardPoints({
                     studentId: updated.student.toString(),
                     amount: earnedPoints,
-                    type: 'exam_completed',
+                    type: (examType as string) === 'lesson_quiz' || examType === 'quiz' ? 'quiz_completed' : 'exam_completed',
                     reason: `${examType === 'monthly_exam' ? 'امتحان شهري' : 'امتحان'} - ${percentage}% (بعد التصحيح)`,
                     referenceId: updated.examRef.toString(),
                     referenceType: 'Exam',
+                    idempotencyKey: `exam_${updated.student.toString()}_${updated.examRef.toString()}`,
                 }).catch(() => {});
                 await ExamAttempt.findByIdAndUpdate(attemptId, { pointsAwarded: true, earnedPoints });
                 checkAndAwardAchievements(updated.student.toString()).catch(() => {});

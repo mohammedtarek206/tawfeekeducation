@@ -5,7 +5,7 @@ import Lesson from '@/lib/db/models/Lesson';
 import User from '@/lib/db/models/User';
 import { withStudent } from '@/lib/auth/middleware';
 import { JWTPayload } from '@/lib/auth/jwt';
-import { awardPoints, updateStreak } from '@/lib/gamification/engine';
+import { awardPoints, updateStreak, getGamificationSettings } from '@/lib/gamification/engine';
 import { checkAndAwardAchievements } from '@/lib/utils/achievements';
 import { checkStudentAccess } from '@/lib/subscriptions/checkAccess';
 import mongoose from 'mongoose';
@@ -51,10 +51,15 @@ async function completeHandler(req: NextRequest, _ctx: unknown, student: JWTPayl
     }
 
     // ── 2. Verify lesson ───────────────────────────────────────────────────────
+    const studentGrade = studentUser.grade;
+    const gradeFilter = studentGrade === 'second_secondary' || studentGrade === 'second_secondary_baccalaureate'
+        ? { $in: ['second_secondary', 'second_secondary_baccalaureate'] }
+        : studentGrade;
+
     const lesson = await Lesson.findOne({
         _id: lessonId,
         isPublished: true,
-        grade: studentUser.grade,
+        ...(studentGrade ? { grade: gradeFilter } : {}),
     }).select('title points completionThreshold duration isFree');
 
     if (!lesson) {
@@ -160,7 +165,8 @@ async function completeHandler(req: NextRequest, _ctx: unknown, student: JWTPayl
 
     if (updatedProgress) {
         // We won the race to award points
-        const pointsAmount = lesson.points || parseInt(process.env.DEFAULT_LESSON_COMPLETE_POINTS || '10');
+        const gamificationSettings = await getGamificationSettings();
+        const pointsAmount = lesson.points || gamificationSettings.lessonCompletePoints || 10;
 
         const result = await awardPoints({
             studentId: student.userId,
@@ -169,6 +175,7 @@ async function completeHandler(req: NextRequest, _ctx: unknown, student: JWTPayl
             reason: `إكمال حصة: ${lesson.title}`,
             referenceId: lessonId,
             referenceType: 'Lesson',
+            idempotencyKey: `lesson_complete_${student.userId}_${lessonId}`,
         });
 
         if (result.success) {

@@ -53,6 +53,32 @@ export default function StudentPointsPage() {
                 </div>
             </div>
 
+            {/* Sources Breakdown Grid */}
+            {data.breakdown && (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                    <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm text-center">
+                        <div className="text-2xl mb-1">🎬</div>
+                        <div className="text-xl font-black text-gray-900">{data.breakdown.videoPoints || 0}</div>
+                        <div className="text-xs text-gray-500 font-semibold mt-0.5">مشاهدة الحصص</div>
+                    </div>
+                    <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm text-center">
+                        <div className="text-2xl mb-1">📝</div>
+                        <div className="text-xl font-black text-gray-900">{data.breakdown.examPoints || 0}</div>
+                        <div className="text-xs text-gray-500 font-semibold mt-0.5">الاختبارات والامتحانات</div>
+                    </div>
+                    <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm text-center">
+                        <div className="text-2xl mb-1">🏆</div>
+                        <div className="text-xl font-black text-gray-900">{data.breakdown.achievementPoints || 0}</div>
+                        <div className="text-xs text-gray-500 font-semibold mt-0.5">الإنجازات والمهام</div>
+                    </div>
+                    <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm text-center">
+                        <div className="text-2xl mb-1">👥</div>
+                        <div className="text-xl font-black text-gray-900">{data.breakdown.referralPoints || 0}</div>
+                        <div className="text-xs text-gray-500 font-semibold mt-0.5">دعوة الأصدقاء</div>
+                    </div>
+                </div>
+            )}
+
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 {/* Transaction Ledger */}
                 <div className="lg:col-span-2 bg-white rounded-3xl p-6 sm:p-8 border border-earth/40 shadow-sm space-y-6">

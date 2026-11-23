@@ -52,10 +52,17 @@ async function handler(
         pointsEarned: task.points || 0,
     });
 
-    // Award points to student (idempotent because StudentTask has unique index)
+    // Award points to student (idempotent because StudentTask has unique index and awardPoints has idempotencyKey)
     if (task.points > 0) {
-        await User.findByIdAndUpdate(student.userId, {
-            $inc: { points: task.points },
+        const { awardPoints } = await import('@/lib/gamification/engine');
+        await awardPoints({
+            studentId: student.userId,
+            amount: task.points,
+            type: 'task_completion',
+            reason: `إتمام مهمة: ${task.title}`,
+            referenceId: taskId,
+            referenceType: 'Task',
+            idempotencyKey: `task_${student.userId}_${taskId}`,
         });
     }
 

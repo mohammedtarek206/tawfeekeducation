@@ -4,7 +4,7 @@ import User from '@/lib/db/models/User';
 import PointTransaction from '@/lib/db/models/PointTransaction';
 import { withStudent } from '@/lib/auth/middleware';
 import { JWTPayload } from '@/lib/auth/jwt';
-import { getLeaderboard, getStudentRank } from '@/lib/gamification/engine';
+import { getLeaderboard, getStudentRank, getStudentPointsBreakdown } from '@/lib/gamification/engine';
 import { getHonorBoardSettings } from '@/lib/settings/honorBoard';
 
 export const dynamic = 'force-dynamic';
@@ -46,6 +46,9 @@ async function handler(req: NextRequest, _ctx: unknown, student: JWTPayload): Pr
     // مركز الطالب الحالي الفعلي
     const currentRank = (await getStudentRank(student.userId, { includeZeroPoints: settings.showZeroPoints })) || 0;
 
+    // تفاصيل مصادر النقاط
+    const breakdown = await getStudentPointsBreakdown(student.userId);
+
     const formattedTransactions = transactions.map((t: any) => ({
         id: t._id,
         amount: t.amount,
@@ -61,6 +64,14 @@ async function handler(req: NextRequest, _ctx: unknown, student: JWTPayload): Pr
             balance: studentUser.points || 0,
             level: studentUser.level || 1,
             rank: currentRank,
+            breakdown: {
+                videoPoints: breakdown.videoPoints,
+                examPoints: breakdown.examPoints,
+                achievementPoints: breakdown.achievementPoints,
+                referralPoints: breakdown.referralPoints,
+                adminAddedPoints: breakdown.adminAddedPoints,
+                deductedPoints: breakdown.deductedPoints,
+            },
             leaderboard,
             transactions: formattedTransactions,
         },

@@ -31,6 +31,7 @@ async function postHandler(req: NextRequest, _ctx: unknown, admin: JWTPayload): 
         type: 'admin_adjustment',
         reason,
         awardedBy: admin.userId,
+        allowNonApproved: true,
     });
 
     if (!result.success) {

@@ -11,11 +11,14 @@ export interface FreeOfferSettings {
     freeOfferEnabled: boolean;
     freeOfferTitle: string;
     freeOfferDescription: string;
-    freeOfferDuration: number; // in days
+    freeOfferDuration: number; // in days or hours
+    freeOfferDurationUnit: 'days' | 'hours';
     freeOfferCtaText: string;
     freeOfferStartDate: Date | null;
     freeOfferEndDate: Date | null;
     freeOfferEligibleGrades: string[]; // [] = all grades
+    freeOfferGrantMode: 'auto_register' | 'admin_approval';
+    freeOfferAudience: 'all' | 'specific_grades' | 'new_registered';
 }
 
 export interface FreeOfferStats {
@@ -38,10 +41,13 @@ const SETTING_KEYS = [
     'free_offer_title', 'freeOfferTitle',
     'free_offer_description', 'freeOfferDescription',
     'free_offer_duration', 'freeOfferDuration',
+    'free_offer_duration_unit', 'freeOfferDurationUnit',
     'free_offer_cta_text',
     'free_offer_start_date',
     'free_offer_end_date',
     'free_offer_eligible_grades',
+    'free_offer_grant_mode', 'freeOfferGrantMode',
+    'free_offer_audience', 'freeOfferAudience',
 ];
 
 // ─── getFreeOfferSettings ─────────────────────────────────────────────────────
@@ -79,6 +85,19 @@ export async function getFreeOfferSettings(): Promise<FreeOfferSettings> {
     const durationNum = parseInt(String(rawDuration), 10);
     const freeOfferDuration = isNaN(durationNum) || durationNum < 1 ? 365 : durationNum;
 
+    // --- duration unit ---
+    const rawUnit = map['free_offer_duration_unit'] ?? map['freeOfferDurationUnit'] ?? 'days';
+    const freeOfferDurationUnit: 'days' | 'hours' = rawUnit === 'hours' ? 'hours' : 'days';
+
+    // --- grant mode ---
+    const rawGrantMode = map['free_offer_grant_mode'] ?? map['freeOfferGrantMode'] ?? 'admin_approval';
+    const freeOfferGrantMode: 'auto_register' | 'admin_approval' = rawGrantMode === 'auto_register' ? 'auto_register' : 'admin_approval';
+
+    // --- audience ---
+    const rawAudience = map['free_offer_audience'] ?? map['freeOfferAudience'] ?? 'all';
+    const freeOfferAudience: 'all' | 'specific_grades' | 'new_registered' =
+        rawAudience === 'specific_grades' || rawAudience === 'new_registered' ? rawAudience : 'all';
+
     // --- CTA text ---
     const freeOfferCtaText = String(map['free_offer_cta_text'] ?? 'احجز مكانك الآن مجانًا');
 
@@ -106,10 +125,13 @@ export async function getFreeOfferSettings(): Promise<FreeOfferSettings> {
         freeOfferTitle,
         freeOfferDescription,
         freeOfferDuration,
+        freeOfferDurationUnit,
         freeOfferCtaText,
         freeOfferStartDate,
         freeOfferEndDate,
         freeOfferEligibleGrades,
+        freeOfferGrantMode,
+        freeOfferAudience,
     };
 }
 
@@ -209,8 +231,12 @@ export async function assignFreeSlotAtomically(
     // low concurrency; for high-traffic, wrap in a session/transaction.
 
     const startDate = new Date();
-    const endDate = new Date();
-    endDate.setDate(endDate.getDate() + settings.freeOfferDuration);
+    const endDate = new Date(startDate.getTime());
+    if (settings.freeOfferDurationUnit === 'hours') {
+        endDate.setTime(endDate.getTime() + settings.freeOfferDuration * 60 * 60 * 1000);
+    } else {
+        endDate.setTime(endDate.getTime() + settings.freeOfferDuration * 24 * 60 * 60 * 1000);
+    }
 
     const slotNumber = currentCount + 1;
 
@@ -236,6 +262,19 @@ export async function assignFreeSlotAtomically(
         return { assigned: false, reason: 'already_free_or_not_found' };
     }
 
+    // Create real Subscription document in MongoDB
+    const Subscription = (await import('@/lib/db/models/Subscription')).default;
+    const durationLabel = `${settings.freeOfferDuration} ${settings.freeOfferDurationUnit === 'hours' ? 'ساعة' : 'يوم'}`;
+    const subRecord = await Subscription.create({
+        studentId: updatedStudent._id,
+        gradeId: studentGrade || updatedStudent.grade || 'all',
+        status: 'active',
+        source: 'free_offer',
+        startDate,
+        endDate,
+        notes: `اشتراك مجاني - المقعد #${slotNumber} (المدة: ${durationLabel})`,
+    });
+
     // Double-check: if the slot we just assigned pushed count over the limit,
     // that's acceptable by design (we allow up to `slotNumber <= limit`).
     if (slotNumber > settings.freeStudentsLimit) {
@@ -249,6 +288,9 @@ export async function assignFreeSlotAtomically(
                 subscriptionEndDate: null,
             },
         });
+        if (subRecord?._id) {
+            await Subscription.findByIdAndDelete(subRecord._id);
+        }
         return { assigned: false, reason: 'limit_reached' };
     }
 
