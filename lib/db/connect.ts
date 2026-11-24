@@ -2,14 +2,16 @@ import mongoose from 'mongoose';
 import dns from 'dns';
 
 // ─── Environment Check ────────────────────────────────────────────────────────
-const MONGODB_URI = process.env.MONGODB_URI;
-
-if (!MONGODB_URI) {
-    throw new Error(
-        '[MongoDB] MONGODB_URI is not configured.\n' +
-        'Please add MONGODB_URI to your .env.local file.\n' +
-        'Format: mongodb+srv://USERNAME:PASSWORD@CLUSTER.mongodb.net/DATABASE'
-    );
+function getMongoUri(): string {
+    const uri = process.env.MONGODB_URI;
+    if (!uri) {
+        throw new Error(
+            '[MongoDB] MONGODB_URI is not configured.\n' +
+            'Please add MONGODB_URI to your environment variables.\n' +
+            'Format: mongodb+srv://USERNAME:PASSWORD@CLUSTER.mongodb.net/DATABASE'
+        );
+    }
+    return uri;
 }
 
 // ─── DNS Fix: Force IPv4 + prefer system DNS then Google DNS ─────────────────
@@ -17,7 +19,7 @@ if (!MONGODB_URI) {
 // Node.js by default may use IPv6 or a DNS resolver that blocks SRV records.
 dns.setDefaultResultOrder('ipv4first');
 
-// ─── Connection Cache (prevents multiple connections on hot-reload) ────────────
+// ─── Connection Cache (prevents multiple connections on hot-reload & serverless) ─
 interface MongooseCache {
     conn: typeof mongoose | null;
     promise: Promise<typeof mongoose> | null;
@@ -28,17 +30,18 @@ declare global {
     var __mongooseCache: MongooseCache | undefined;
 }
 
-const cached: MongooseCache = global.__mongooseCache ?? { conn: null, promise: null };
+const cached: MongooseCache = globalThis.__mongooseCache ?? { conn: null, promise: null };
 
-if (!global.__mongooseCache) {
-    global.__mongooseCache = cached;
+if (!globalThis.__mongooseCache) {
+    globalThis.__mongooseCache = cached;
 }
 
-// ─── Connection Options ───────────────────────────────────────────────────────
+// ─── Connection Options (tuned for Vercel Serverless + MongoDB Atlas M0) ─────
 const MONGOOSE_OPTS: mongoose.ConnectOptions = {
     bufferCommands: false,
-    maxPoolSize: 10,
-    minPoolSize: 1,
+    maxPoolSize: 3,                     // Keep pool small per serverless instance for Atlas M0 (500 conn limit)
+    minPoolSize: 0,                     // Allow pool to scale to 0 when instance is idle
+    maxIdleTimeMS: 10000,               // Close idle sockets after 10s while lambda is warm/frozen
     serverSelectionTimeoutMS: 10000,   // 10s – give DNS time to resolve
     socketTimeoutMS: 45000,
     connectTimeoutMS: 10000,
@@ -73,26 +76,34 @@ function classifyMongoError(err: unknown): string {
 
 // ─── Main connectDB function ──────────────────────────────────────────────────
 async function connectDB(): Promise<typeof mongoose> {
-    // Return existing healthy connection
+    // Return existing healthy connection (readyState: 1 = connected)
     if (cached.conn) {
         const state = cached.conn.connection.readyState;
-        // readyState: 0=disconnected, 1=connected, 2=connecting, 3=disconnecting
-        if (state === 1 || state === 2) {
+        if (state === 1) {
             return cached.conn;
         }
-        // Connection dropped – reset cache and reconnect
-        console.warn('[MongoDB] Existing connection is stale (state=' + state + '). Reconnecting...');
-        cached.conn = null;
-        cached.promise = null;
+        // If still connecting and a promise is in flight, wait for it below
+        if (state !== 2 || !cached.promise) {
+            // Connection dropped or disconnecting – reset cache and reconnect
+            console.warn('[MongoDB] Existing connection is stale (state=' + state + '). Reconnecting...');
+            cached.conn = null;
+            cached.promise = null;
+        }
+    }
+
+    // Reuse an already-open default Mongoose connection if cache was cleared
+    if (!cached.conn && mongoose.connection.readyState === 1) {
+        cached.conn = mongoose;
+        return cached.conn;
     }
 
     if (!cached.promise) {
-        cached.promise = mongoose.connect(MONGODB_URI!, MONGOOSE_OPTS);
+        const uri = getMongoUri();
+        cached.promise = mongoose.connect(uri, MONGOOSE_OPTS);
     }
 
     try {
         cached.conn = await cached.promise;
-        console.log('[MongoDB] Connected successfully');
     } catch (err: unknown) {
         cached.promise = null;
         cached.conn = null;
